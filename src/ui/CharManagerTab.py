@@ -591,6 +591,9 @@ class CharManagerTab(CustomTab):
             for index, cmd in enumerate(docs):
                 cmd_name = str(cmd.name)
                 cmd_example = str(cmd.example or cmd_name)
+                cmd_doc = str(cmd.doc or empty_text)
+                if getattr(cmd, "if_capable", False):
+                    cmd_doc += "（可用于 if_ 条件）"
                 name_token = f"__CMD_NAME_{index}__"
                 example_token = f"__CMD_EXAMPLE_{index}__"
                 protected_literals[name_token] = cmd_name
@@ -598,12 +601,12 @@ class CharManagerTab(CustomTab):
 
                 text += f"▶ 【{cmd_name}】\n"
                 text += f"    • 参数: {cmd.params or empty_text}\n"
-                text += f"    • 说明: {cmd.doc or empty_text}\n"
+                text += f"    • 说明: {cmd_doc}\n"
                 text += f"    • 示例: {cmd_example}\n\n"
 
                 translatable_text += f"▶ 【{name_token}】\n"
                 translatable_text += f"    • 参数: {cmd.params or empty_text}\n"
-                translatable_text += f"    • 说明: {cmd.doc or empty_text}\n"
+                translatable_text += f"    • 说明: {cmd_doc}\n"
                 translatable_text += f"    • 示例: {example_token}\n\n"
 
             locale_name = self._locale_name()

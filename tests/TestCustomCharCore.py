@@ -3,7 +3,7 @@ import os
 import shutil
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src.char.custom.CustomChar import CustomChar
 from src.char.custom.CustomCharManager import CustomCharManager, DB_SCHEMA_VERSION
@@ -112,6 +112,65 @@ class TestCustomCharCore(unittest.TestCase):
         is_valid, error = CustomChar.validate_combo_syntax("not_a_command")
         self.assertFalse(is_valid)
         self.assertIn("unknown command", error or "")
+
+    def test_validate_combo_supports_if_command(self):
+        is_valid, error = CustomChar.validate_combo_syntax("if_(ultimate, skill)")
+        self.assertTrue(is_valid)
+        self.assertIsNone(error)
+
+        is_valid, error = CustomChar.validate_combo_syntax("if_(ultimate, l_click(2))")
+        self.assertTrue(is_valid)
+        self.assertIsNone(error)
+
+        is_valid, error = CustomChar.validate_combo_syntax("if_(ultimate, skill, wait(0.1))")
+        self.assertTrue(is_valid)
+        self.assertIsNone(error)
+
+    def test_validate_combo_rejects_invalid_if_usage(self):
+        is_valid, error = CustomChar.validate_combo_syntax("if_(wait, skill)")
+        self.assertFalse(is_valid)
+        self.assertIn("not enabled as if_ condition", error or "")
+
+        is_valid, error = CustomChar.validate_combo_syntax("if_(ultimate)")
+        self.assertFalse(is_valid)
+        self.assertIn("at least 2", error or "")
+
+        is_valid, error = CustomChar.validate_combo_syntax("if_(ultimate, skill, wait=0.1)")
+        self.assertFalse(is_valid)
+        self.assertIn("only supports positional", error or "")
+
+    def test_if_runtime_executes_then_only_when_condition_is_true_bool(self):
+        char = object.__new__(CustomChar)
+        char.logger = Mock()
+        state = {"then_count": 0}
+
+        cond_true = ("ultimate", lambda self: True, [], {}, "ultimate")
+        then_cmds = [
+            ("skill", lambda self: state.__setitem__("then_count", state["then_count"] + 1), [], {}, "skill"),
+            ("wait", lambda self: state.__setitem__("then_count", state["then_count"] + 1), [], {}, "wait(0.1)"),
+        ]
+        result = char._execute_if_command(cond_true, then_cmds)
+        self.assertTrue(result)
+        self.assertEqual(state["then_count"], 2)
+
+        cond_false = ("ultimate", lambda self: False, [], {}, "ultimate")
+        result = char._execute_if_command(cond_false, then_cmds)
+        self.assertFalse(result)
+        self.assertEqual(state["then_count"], 2)
+
+    def test_if_runtime_treats_non_bool_condition_as_false(self):
+        char = object.__new__(CustomChar)
+        char.logger = Mock()
+        state = {"then_count": 0}
+
+        cond_non_bool = ("ultimate", lambda self: "yes", [], {}, "ultimate")
+        then_cmds = [("skill", lambda self: state.__setitem__("then_count", state["then_count"] + 1), [], {}, "skill")]
+        result = char._execute_if_command(cond_non_bool, then_cmds)
+
+        self.assertFalse(result)
+        self.assertEqual(state["then_count"], 0)
+        char.logger.warning.assert_called_once()
+        self.assertIn("non-bool", char.logger.warning.call_args[0][0])
 
     def test_validate_db_removes_missing_feature_assets_and_metadata(self):
         existing_fid = "feat_exists"

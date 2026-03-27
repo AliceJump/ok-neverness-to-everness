@@ -10,6 +10,7 @@ class Cmd(NamedTuple):
     params: str
     doc: str
     example: str
+    if_capable: bool = False
 
 class CustomChar(BaseChar):
     """
@@ -51,8 +52,8 @@ class CustomChar(BaseChar):
         PARAM_REQ_KEY = "按键，必填"
         DOC_MOUSE_BUTTON = "鼠标按键left、right、middle, 不填默认left"
         return [
-            Cmd("skill", cls.click_skill, PARAM_NONE, "释放技能", "skill"),
-            Cmd("ultimate", cls.click_ultimate, PARAM_NONE, "释放终结技", "ultimate"),
+            Cmd("skill", cls.custom_click_skill, PARAM_NONE, "释放技能", "skill", True),
+            Cmd("ultimate", cls.click_ultimate, PARAM_NONE, "释放终结技", "ultimate", True),
             Cmd("l_click", cls.smart_left_click, PARAM_OPT_DURATION, "鼠标左键。带参数则连点鼠标左键指定秒数，无参数为单次点按", "l_click, l_click(3)"),
             Cmd("r_click", cls.smart_right_click, PARAM_OPT_DURATION, "鼠标右键。带参数则连点鼠标右键指定秒数，无参数为单次点按", "r_click, r_click(2)"),
             Cmd("l_hold", cls.heavy_attack, PARAM_OPT_DURATION, "按住鼠标左键。带参数则指定秒数", "l_hold, l_hold(2)"),
@@ -66,6 +67,7 @@ class CustomChar(BaseChar):
             Cmd("keydown", cls.keydown, PARAM_REQ_KEY, "按下按键", "keydown(a)"),
             Cmd("keyup", cls.keyup, PARAM_REQ_KEY, "松开按键", "keyup(d)"),
             Cmd("keypress", cls.keypress, PARAM_REQ_KEY, "按下并松开按键", "keypress(f1)"),
+            Cmd("if_", cls._execute_if_command, "条件命令、一个或多个目标命令", "条件执行：仅可使用标记为 if_capable=True 的命令作为条件命令", "if_(ultimate, skill), if_(ultimate, l_click(2), wait(0.1))"),
         ]
 
     def _compile_combo(self):
@@ -105,6 +107,110 @@ class CustomChar(BaseChar):
             return False, None, f"{cls._node_loc(node)}: unsupported value expression"
 
     @classmethod
+    def _resolve_target(cls, func_name: str, aliases: dict[str, Callable[..., Any]]):
+        target = aliases.get(func_name, func_name)
+        if not callable(target) and not hasattr(cls, func_name):
+            return None
+        return target
+
+    @classmethod
+    def _parse_if_command(
+        cls,
+        node: ast.Call,
+        combo_str: str,
+        aliases: dict[str, Callable[..., Any]],
+        if_capable_map: dict[str, bool],
+    ):
+        if node.keywords:
+            return None, f"{cls._node_loc(node)}: if_ only supports positional arguments"
+        if len(node.args) < 2:
+            return None, f"{cls._node_loc(node)}: if_ requires at least 2 positional arguments: if_(cond, then1, ...)"
+
+        cond_node = node.args[0]
+        then_nodes = node.args[1:]
+        if not isinstance(cond_node, ast.Name):
+            return None, f"{cls._node_loc(cond_node)}: if_ condition must be a command name without arguments"
+
+        cond_name = cond_node.id
+        cond_target = cls._resolve_target(cond_name, aliases)
+        if cond_target is None:
+            return None, f"{cls._node_loc(cond_node)}: unknown command '{cond_name}'"
+        if not if_capable_map.get(cond_name, False):
+            return None, f"{cls._node_loc(cond_node)}: command '{cond_name}' is not enabled as if_ condition"
+
+        cond_cmd_text = ast.get_source_segment(combo_str, cond_node) or cond_name
+        cond_cmd = (cond_name, cond_target, [], {}, cond_cmd_text)
+
+        then_cmds = []
+        for then_node in then_nodes:
+            then_cmd, err = cls._parse_command_node(
+                then_node,
+                combo_str=combo_str,
+                aliases=aliases,
+                if_capable_map=if_capable_map,
+                allow_if=False,
+            )
+            if err:
+                return None, err
+            then_cmds.append(then_cmd)
+
+        cmd_text = ast.get_source_segment(combo_str, node) or "if_"
+        return ("if_", cls._execute_if_command, [cond_cmd, then_cmds], {}, cmd_text), None
+
+    @classmethod
+    def _parse_command_node(
+        cls,
+        node,
+        combo_str: str,
+        aliases: dict[str, Callable[..., Any]],
+        if_capable_map: dict[str, bool],
+        allow_if: bool = True,
+    ):
+        func_name = ""
+        args = []
+        kwargs = {}
+
+        if isinstance(node, ast.Name):
+            func_name = node.id
+            if func_name == "if_":
+                return None, f"{cls._node_loc(node)}: if_ must be called with arguments, e.g. if_(ultimate, skill, wait(0.1))"
+        elif isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name):
+                return None, f"{cls._node_loc(node)}: unsupported callable expression"
+            func_name = node.func.id
+
+            if func_name == "if_":
+                if not allow_if:
+                    return None, f"{cls._node_loc(node)}: nested if_ is not supported"
+                return cls._parse_if_command(node, combo_str, aliases, if_capable_map)
+
+            for arg in node.args:
+                ok, value, err = cls._parse_node_value(arg)
+                if not ok:
+                    return None, err
+                args.append(value)
+
+            for kw in node.keywords:
+                if kw.arg is None:
+                    return None, f"{cls._node_loc(kw)}: **kwargs syntax is not supported"
+                ok, value, err = cls._parse_node_value(kw.value)
+                if not ok:
+                    return None, err
+                kwargs[kw.arg] = value
+        else:
+            return None, f"{cls._node_loc(node)}: unsupported syntax '{type(node).__name__}'"
+
+        if not func_name:
+            return None, f"{cls._node_loc(node)}: command name is required"
+
+        target = cls._resolve_target(func_name, aliases)
+        if target is None:
+            return None, f"{cls._node_loc(node)}: unknown command '{func_name}'"
+
+        cmd_text = ast.get_source_segment(combo_str, node) or func_name
+        return (func_name, target, args, kwargs, cmd_text), None
+
+    @classmethod
     def compile_combo_text(cls, combo_str: str):
         """
         Compile combo text into executable tuples.
@@ -114,7 +220,9 @@ class CustomChar(BaseChar):
         if not combo_str or not combo_str.strip():
             return parsed_combo, None
 
-        aliases = {cmd.name: cmd.func for cmd in cls.get_command_definitions()}
+        command_defs = cls.get_command_definitions()
+        aliases = {cmd.name: cmd.func for cmd in command_defs}
+        if_capable_map = {cmd.name: cmd.if_capable for cmd in command_defs}
 
         try:
             tree = ast.parse(combo_str)
@@ -128,43 +236,16 @@ class CustomChar(BaseChar):
             expr = stmt.value
             nodes = expr.elts if isinstance(expr, ast.Tuple) else [expr]
             for node in nodes:
-                func_name = ""
-                args = []
-                kwargs = {}
-
-                if isinstance(node, ast.Name):
-                    func_name = node.id
-                elif isinstance(node, ast.Call):
-                    if isinstance(node.func, ast.Name):
-                        func_name = node.func.id
-                    else:
-                        return [], f"{cls._node_loc(node)}: unsupported callable expression"
-
-                    for arg in node.args:
-                        ok, value, err = cls._parse_node_value(arg)
-                        if not ok:
-                            return [], err
-                        args.append(value)
-
-                    for kw in node.keywords:
-                        if kw.arg is None:
-                            return [], f"{cls._node_loc(kw)}: **kwargs syntax is not supported"
-                        ok, value, err = cls._parse_node_value(kw.value)
-                        if not ok:
-                            return [], err
-                        kwargs[kw.arg] = value
-                else:
-                    return [], f"{cls._node_loc(node)}: unsupported syntax '{type(node).__name__}'"
-
-                if not func_name:
-                    return [], f"{cls._node_loc(node)}: command name is required"
-
-                target = aliases.get(func_name, func_name)
-                if not callable(target) and not hasattr(cls, func_name):
-                    return [], f"{cls._node_loc(node)}: unknown command '{func_name}'"
-
-                cmd_text = ast.get_source_segment(combo_str, node) or func_name
-                parsed_combo.append((func_name, target, args, kwargs, cmd_text))
+                parsed_command, err = cls._parse_command_node(
+                    node,
+                    combo_str=combo_str,
+                    aliases=aliases,
+                    if_capable_map=if_capable_map,
+                    allow_if=True,
+                )
+                if err:
+                    return [], err
+                parsed_combo.append(parsed_command)
 
         return parsed_combo, None
 
@@ -175,23 +256,44 @@ class CustomChar(BaseChar):
 
     def _execute_parsed_combo(self):
         """战斗时极速遍历并执行已缓存的指令队列"""
-        for func_name, target, args, kwargs, cmd in self.parsed_combo:
+        for command in self.parsed_combo:
             try:
-                if callable(target):
-                    self.logger.debug(f"Executing Custom Combo Command: {func_name}(*{args}, **{kwargs})")
-                    target(self, *args, **kwargs)
-                else:
-                    if hasattr(self, target):
-                        func = getattr(self, target)
-                        self.logger.debug(f"Executing Custom Combo Command: {target}(*{args}, **{kwargs})")
-                        func(*args, **kwargs)
-                    else:
-                        self.logger.warning(f"Unknown command in combo: {target}")
+                self._execute_compiled_command(command)
             except Exception as e:
+                cmd = command[4] if len(command) >= 5 else "unknown"
                 self.logger.error(f"Error executing command '{cmd}': {e}")
 
             # 中途打断逻辑
             self.check_combat()
+
+    def _execute_compiled_command(self, command):
+        func_name, target, args, kwargs, _ = command
+        if callable(target):
+            self.logger.debug(f"Executing Custom Combo Command: {func_name}(*{args}, **{kwargs})")
+            return target(self, *args, **kwargs)
+
+        if hasattr(self, target):
+            func = getattr(self, target)
+            self.logger.debug(f"Executing Custom Combo Command: {target}(*{args}, **{kwargs})")
+            return func(*args, **kwargs)
+
+        self.logger.warning(f"Unknown command in combo: {target}")
+        return None
+
+    def _execute_if_command(self, condition_cmd, then_cmds):
+        cond_result = self._execute_compiled_command(condition_cmd)
+        if not isinstance(cond_result, bool):
+            self.logger.warning(
+                f"if_ condition command '{condition_cmd[0]}' returned non-bool value, treat as False"
+            )
+            return False
+
+        if not cond_result:
+            return False
+
+        for then_cmd in then_cmds:
+            self._execute_compiled_command(then_cmd)
+        return True
 
     @classmethod
     def get_available_commands(cls):
@@ -238,3 +340,6 @@ class CustomChar(BaseChar):
 
     def keypress(self, key):
         self.task.send_key(key=key)
+
+    def custom_click_skill(self) -> bool:
+        return self.click_skill()[0]
