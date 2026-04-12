@@ -476,12 +476,7 @@ class BaseCombatTask(CombatCheck):
             if isinstance(char, char_cls):
                 return char
 
-    def _load_char_from_slot(self, index: int, count: int, fixed_slots) -> 'BaseChar':
-        box = self.get_box_by_name(f'box_char_{index + 1}')
-        if count == 1:
-            offset = int(self.width * -9 / 2560)
-            box = box.copy(x_offset=offset)
-
+    def _do_load_char(self, index: int, count: int, fixed_slots) -> 'BaseChar':
         fixed_slot = safe_get(fixed_slots, index)
         fixed_char_name = ""
         fixed_combo_ref = ""
@@ -493,7 +488,12 @@ class BaseCombatTask(CombatCheck):
             self.log_debug(f'load_chars use fixed slot {index + 1}: {fixed_char_name} {fixed_combo_ref}')
             return get_char_by_name(self, index, fixed_char_name, confidence=1, combo_ref=fixed_combo_ref)
 
+        box = self.get_box_by_name(f'box_char_{index + 1}')
+        if count == 1:
+            offset = int(self.width * -9 / 2560)
+            box = box.copy(x_offset=offset)
         box_scaled = box.scale(1.1, 1.1)
+
         return get_char_by_pos(self, box_scaled, index, safe_get(self.chars, index))
 
     def load_chars(self) -> bool:
@@ -512,7 +512,7 @@ class BaseCombatTask(CombatCheck):
         fixed_slots = fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
         new_chars = []
         for i in range(count):
-            char = self._load_char_from_slot(i, count, fixed_slots)
+            char = self._do_load_char(i, count, fixed_slots)
             char.element = elements[i]
             new_chars.append(char)
         self.chars = new_chars
@@ -527,12 +527,11 @@ class BaseCombatTask(CombatCheck):
                     char.is_current_char = True
                 else:
                     char.is_current_char = False
-        self.combat_start = time.time()
+                self.log_info(f'loaded chars success {char} {char.char_name} {char.confidence:.2f} {char.element}')
+                self.info_add_to_list('Chars', f"{char.char_name}: {char.combo_label}")
+
         if self.team_size > 0:
-            self.info_set('Chars', [f"{c.char_name}: {c.combo_label}" for c in self.chars if c is not None])
-            for c in self.chars:
-                if c:
-                    self.log_info(f'loaded chars success {c} {c.confidence} {c.element}')
+            self.combat_start = time.time()
             return True
         return False
 

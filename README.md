@@ -73,10 +73,11 @@ All issues and consequences arising from the use of this software are not relate
     ```
 3.  **安装依赖**：
     ```bash
-    pip install -r requirements.txt --upgrade
+    uv sync
+    # or
+    pip install -r requirements.txt
     ```
     *提示：每次更新代码后，建议重新运行此命令以确保依赖库为最新版本。*  
-    *本项目已支持使用 `uv` 进行依赖管理，`requirements.txt` 和 `requirements-dev.txt` 均由 `uv` 生成。*
 4.  **运行程序**：
     ```bash
     # 运行正式版
@@ -129,7 +130,7 @@ All issues and consequences arising from the use of this software are not relate
 ## 💬 社区与交流
 
 *   **QQ 用户群**: `1090560071`
-*   **QQ 开发者群**: ``
+*   **QQ 开发者群**: `1087276729`
 *   **QQ 频道**: [点击加入]()
 *   **Discord**: [https://discord.gg/vVyCatEBgA](https://discord.gg/vVyCatEBgA)
 
