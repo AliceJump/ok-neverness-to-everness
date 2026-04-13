@@ -57,7 +57,7 @@ This method requires a Python environment and is suitable for users who want to 
 2.  **Clone the repository**:
     ```bash
     git clone https://github.com/BnanZ0/ok-nte.git
-    cd ok-neverness-to-everness
+    cd ok-nte
     ```
 3.  **Install dependencies**:
     ```bash
@@ -86,7 +86,6 @@ Before starting the automation, please check and confirm the following settings:
 *   **Graphics Settings**
     *   **Graphics Filters**: **Disable** all graphics card filters and sharpening effects (e.g., NVIDIA Freestyle, AMD FidelityFX).
     *   **Game Brightness**: Use the **default** in-game brightness.
-    *   **UI Scaling**: Use the **default 100%** UI scale.
 *   **Resolution**
     *   Recommended to use **1920x1080** or other common 16:9 resolutions.
 *   **Keybindings**

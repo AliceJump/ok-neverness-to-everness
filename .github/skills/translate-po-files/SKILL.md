@@ -12,6 +12,15 @@ user-invocable: true
 - Infer target language from locale folder.
 - Keep translation focused and deterministic via extract-to-file -> translate -> apply-from-file.
 
+## Supported Locales
+The project contains exactly these locales under `i18n/`:
+- `en_US` — English (United States)
+- `es_ES` — Spanish (Spain)
+- `ja_JP` — Japanese
+- `ko_KR` — Korean
+- `zh_CN` — Simplified Chinese
+- `zh_TW` — Traditional Chinese
+
 ## Quick Workflow
 1. Run extraction script to write UTF-8 JSON tasks to a file.
 2. Agent fills only `entry.t` in that JSON file.

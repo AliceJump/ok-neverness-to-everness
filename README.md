@@ -69,7 +69,7 @@ All issues and consequences arising from the use of this software are not relate
 2.  **克隆仓库**：
     ```bash
     git clone https://github.com/BnanZ0/ok-nte.git
-    cd ok-neverness-to-everness
+    cd ok-nte
     ```
 3.  **安装依赖**：
     ```bash
@@ -98,7 +98,6 @@ All issues and consequences arising from the use of this software are not relate
 *   **图形设置**
     *   **显卡滤镜**：**关闭** 所有显卡滤行和锐化效果（如 NVIDIA Freestyle, AMD FidelityFX）。
     *   **游戏亮度**：使用游戏 **默认亮度**。
-    *   **游戏UI缩放**：使用游戏 **默认缩放100%**。
 *   **分辨率**
     *   推荐使用 **1920x1080** 或以上的主流分辨率。
 *   **按键设置**

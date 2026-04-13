@@ -11,7 +11,7 @@ from src.char.custom.CustomCharManager import CustomCharManager
 from src.config import config
 from src.tasks.trigger.AutoCombatTask import AutoCombatTask
 from src.ui.CharManagerTab import CharManagerTab
-from src.ui.TeamScannerTab import TeamScannerTab
+from src.ui.TeamManagerTab import TeamManagerTab
 
 PREDEFINED_CHARACTER_REF = "builtin:char_zero"
 
@@ -184,9 +184,9 @@ class TestCustomChar(TaskTestCase):
         # 解綁後，介面會刷新，combo_text 應顯示未綁定的提示文字
         self.assertEqual(tab.combo_text.toPlainText(), tab.tr_unbound_text)
 
-    def test_team_scanner_tab_ui(self):
-        """測試 TeamScannerTab 掃描結束後的 UI 狀態變更邏輯與 SlotCard 確認"""
-        tab = TeamScannerTab(manager=self.manager)
+    def test_team_manager_tab_ui(self):
+        """測試 TeamManagerTab 掃描結束後的 UI 狀態變更邏輯與 SlotCard 確認"""
+        tab = TeamManagerTab(manager=self.manager)
         
         # 準備假資料
         self.manager.add_combo("combo_scanner", "skill")

@@ -2,11 +2,12 @@ import json
 import os
 import uuid
 from threading import Lock, RLock
-import numpy as np
 from typing import TYPE_CHECKING
 
 import cv2
+import numpy as np
 from ok import Logger
+
 from src.char.custom.BuiltinComboRegistry import BuiltinComboRegistry
 from src.Labels import Labels
 
@@ -34,7 +35,7 @@ class CustomCharManager:
         return cls._instance
 
     def __init__(self):
-        if hasattr(self, 'initialized') and self.initialized:
+        if hasattr(self, "initialized") and self.initialized:
             return
         self._data_lock = RLock()
         os.makedirs(FEATURES_DIR, exist_ok=True)
@@ -51,10 +52,7 @@ class CustomCharManager:
 
     @staticmethod
     def _default_fixed_team():
-        return {
-            "enabled": False,
-            "slots": [{"char_name": "", "combo_ref": ""} for _ in range(4)]
-        }
+        return {"enabled": False, "slots": [{"char_name": "", "combo_ref": ""} for _ in range(4)]}
 
     @classmethod
     def _normalize_fixed_team_slot(cls, slot) -> dict:
@@ -88,8 +86,7 @@ class CustomCharManager:
             "combos": {},
             "characters": {},
             "features": {},
-            "fixed_team": CustomCharManager._default_fixed_team()
-
+            "fixed_team": CustomCharManager._default_fixed_team(),
         }
 
     @staticmethod
@@ -166,7 +163,7 @@ class CustomCharManager:
                         loaded["features"] = data.get("features", loaded["features"])
                         loaded["fixed_team"] = data.get("fixed_team", loaded["fixed_team"])
             except Exception as e:
-                logger.error(f"Failed to load custom char DB: {e}")
+                logger.error("Failed to load custom char DB", e)
         self.db = loaded
 
     def validate_db(self):
@@ -229,7 +226,7 @@ class CustomCharManager:
                     json.dump(self.db, f, indent=4, ensure_ascii=False)
                 os.replace(temp_path, DB_PATH)
             except Exception as e:
-                logger.error(f"Failed to save custom char DB: {e}")
+                logger.error("Failed to save custom char DB", e)
 
     def _invalidate_feature_cache(self):
         self._feature_cache.clear()
@@ -269,7 +266,9 @@ class CustomCharManager:
                 # Custom combo keys that resolve to builtin refs are ambiguous.
                 # Remap them into an explicit custom namespace.
                 if self.is_builtin_combo(combo_key):
-                    remapped_key = self._to_custom_combo_key(combo_key, set(normalized_combos.keys()))
+                    remapped_key = self._to_custom_combo_key(
+                        combo_key, set(normalized_combos.keys())
+                    )
                     combo_key_remap[combo_key] = remapped_key
                     combo_key = remapped_key
                     modified = True
@@ -421,7 +420,12 @@ class CustomCharManager:
         """
         with self._data_lock:
             items = [(name, name) for name in self.db["combos"].keys()]
-            items.extend([(label, combo_ref) for combo_ref, label in BuiltinComboRegistry.iter_builtin_pairs()])
+            items.extend(
+                [
+                    (label, combo_ref)
+                    for combo_ref, label in BuiltinComboRegistry.iter_builtin_pairs()
+                ]
+            )
             return items
 
     def add_character(self, char_name, combo_ref):
@@ -437,7 +441,7 @@ class CustomCharManager:
                 self.db["characters"][char_id] = {
                     "name": char_name,
                     "combo_ref": combo_ref,
-                    "feature_ids": []
+                    "feature_ids": [],
                 }
             else:
                 self.db["characters"][char_id]["name"] = char_name
@@ -515,7 +519,7 @@ class CustomCharManager:
                 self.db["characters"][char_id] = {
                     "name": char_name,
                     "combo_ref": "",
-                    "feature_ids": []
+                    "feature_ids": [],
                 }
 
             if "feature_ids" not in self.db["characters"][char_id]:
@@ -567,7 +571,7 @@ class CustomCharManager:
             return mat, w, h
         return None, 0, 0
 
-    def match_feature(self, task:'BaseCombatTask', new_image_mat, threshold=0.8, target_char=None):
+    def match_feature(self, task: "BaseCombatTask", new_image_mat, threshold=0.8, target_char=None):
         """比对新截图与所有数据库内特征图，返回(是/否匹配, 匹配到的角色名, 相似度)"""
         current_scr_h, current_scr_w = task.height, task.width
 
@@ -604,19 +608,30 @@ class CustomCharManager:
                             scale_x = current_scr_w / w
                             scale_y = current_scr_h / h
                             scale = min(scale_x, scale_y)
-                            resized_saved = cv2.resize(saved_img, (round(w * scale), round(h * scale)))
+                            resized_saved = cv2.resize(
+                                saved_img, (round(w * scale), round(h * scale))
+                            )
                         else:
                             scale = 1
                             resized_saved = saved_img
-                        logger.debug(f"loaded {char_name} resized width {current_scr_w} / original_width:{w}, scale_x:{scale}")
+                        logger.debug(
+                            f"loaded {char_name} resized width {current_scr_w} / "
+                            f"original_width:{w}, scale_x:{scale}"
+                        )
                         rebuilt_cache[char_name][fid] = resized_saved
             with self._data_lock:
                 self._feature_cache = rebuilt_cache
                 box = task.get_box_by_name(Labels.box_char_1)
-                self._cache_mask = create_ellipse_mask(box.width, box.height, box.width * 0.4, box.height * 0.4) if box else None
+                self._cache_mask = (
+                    create_ellipse_mask(box.width, box.height, box.width * 0.4, box.height * 0.4)
+                    if box
+                    else None
+                )
 
         with self._data_lock:
-            cache_snapshot = {char_name: dict(features) for char_name, features in self._feature_cache.items()}
+            cache_snapshot = {
+                char_name: dict(features) for char_name, features in self._feature_cache.items()
+            }
 
         best_match_char = None
         best_similarity = 0.0
@@ -625,10 +640,14 @@ class CustomCharManager:
             if target_char and char_name != target_char:
                 continue
             for fid, cached_mat in cached_features.items():
-                # show_masked_template(cached_mat, self._cache_mask)  # Debug visualization of the masked template
+                # show_masked_template(cached_mat, self._cache_mask)  # Debug
                 mask = None
                 if self._cache_mask is not None:
-                    mask = self._cache_mask if cached_mat.shape[0:2] == self._cache_mask.shape[0:2] else None
+                    mask = (
+                        self._cache_mask
+                        if cached_mat.shape[0:2] == self._cache_mask.shape[0:2]
+                        else None
+                    )
                 res = cv2.matchTemplate(new_image_mat, cached_mat, cv2.TM_CCOEFF_NORMED, mask=mask)
                 min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
                 if max_val > best_similarity:
@@ -681,15 +700,17 @@ class CustomCharManager:
             fixed_team = self._normalize_fixed_team_config(self.db.get("fixed_team"))
             return {
                 "enabled": fixed_team["enabled"],
-                "slots": [dict(slot) for slot in fixed_team["slots"]]
+                "slots": [dict(slot) for slot in fixed_team["slots"]],
             }
 
     def set_fixed_team(self, enabled: bool, slots):
         with self._data_lock:
-            self.db["fixed_team"] = self._normalize_fixed_team_config({
-                "enabled": enabled,
-                "slots": slots,
-            })
+            self.db["fixed_team"] = self._normalize_fixed_team_config(
+                {
+                    "enabled": enabled,
+                    "slots": slots,
+                }
+            )
             self.save_db()
 
     def clear_fixed_team(self):
@@ -701,38 +722,38 @@ class CustomCharManager:
 def create_ellipse_mask(w, h, rx, ry):
     # 1. 创建全黑图像
     mask = np.zeros((h, w), dtype=np.uint8)
-    
+
     # 2. 强制将所有数值转换为整数，避免类型错误
     # center 要求是 (int, int)
     # axes 要求是 (int, int)
     center = (int(w // 2), int(h // 2))
     axes = (int(rx), int(ry))
-    
+
     # 3. 使用规范的参数格式
     # 必须保证是 (img, center, axes, angle, startAngle, endAngle, color, thickness)
     cv2.ellipse(mask, center, axes, 0, 0, 360, 255, -1)
-    
+
     return mask
 
 
 def show_masked_template(cached_mat, _cache_mask):
     # 1. 获取目标尺寸 (以 cached_mat 为准)
     h, w = cached_mat.shape[:2]
-    
+
     # 2. 确保 mask 是 2 维的 (如果有可能是 3 维的，去掉通道)
     if len(_cache_mask.shape) == 3:
         mask = _cache_mask[:, :, 0]
     else:
         mask = _cache_mask.copy()
-        
+
     # 3. 强制调整 mask 尺寸以匹配 cached_mat
     if mask.shape != (h, w):
         print(f"警告：尺寸不匹配！Mat: {h}x{w}, Mask: {mask.shape}。正在强制 resize...")
         mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-        
+
     # 4. 确保类型是 uint8
     mask = mask.astype(np.uint8)
-    
+
     # 5. 执行位运算
     result = cv2.bitwise_and(cached_mat, cached_mat, mask=mask)
     result = cv2.resize(result, (w * 5, h * 5), interpolation=cv2.INTER_NEAREST)

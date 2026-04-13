@@ -1,28 +1,45 @@
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QColor
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QGraphicsDropShadowEffect
-
-from qfluentwidgets import (BodyLabel, CardWidget, FluentIcon, ImageLabel,
-                            InfoBar, InfoBarPosition, MessageBoxBase,
-                            PrimaryPushButton, PushButton, SubtitleLabel,
-                            Flyout, InfoBarIcon, TransparentToolButton)
+from typing import Literal
 
 from ok import og
 from ok.gui.widget.CustomTab import CustomTab
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtWidgets import QGraphicsDropShadowEffect, QHBoxLayout, QVBoxLayout
+from qfluentwidgets import (
+    BodyLabel,
+    CardWidget,
+    FluentIcon,
+    Flyout,
+    ImageLabel,
+    InfoBar,
+    InfoBarIcon,
+    InfoBarPosition,
+    MessageBoxBase,
+    PrimaryPushButton,
+    PushButton,
+    SubtitleLabel,
+    TransparentToolButton,
+)
+
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.tasks.trigger.AutoCombatTask import AutoCombatTask, scanner_signals
-from src.ui.common import SearchableComboBox, char_manager_signals, cv_to_pixmap, COMBO
+from src.ui.common import (
+    COMBO,
+    TEAM_MANAGEMENT,
+    SearchableComboBox,
+    char_manager_signals,
+    cv_to_pixmap,
+)
 
 
 def tr_fmt(text_id, **kwargs):
     t = og.app.tr(text_id)
     for k, v in kwargs.items():
-        t = t.replace(f'{{{k}}}', str(v))
+        t = t.replace(f"{{{k}}}", str(v))
     return t
 
 
 class NewCharDialog(MessageBoxBase):
-
     def __init__(self, mat, manager: CustomCharManager, parent=None):
         super().__init__(parent)
         self.manager = manager
@@ -31,10 +48,19 @@ class NewCharDialog(MessageBoxBase):
         self.tr_list_ph = tr_fmt("输入或选择绑定的{combo} (可选)", combo=COMBO)
 
         self.viewLayout.setSpacing(10)
-        self.viewLayout.addWidget(SubtitleLabel(self.tr_title, self), alignment=Qt.AlignmentFlag.AlignCenter)
+        self.viewLayout.addWidget(
+            SubtitleLabel(self.tr_title, self), alignment=Qt.AlignmentFlag.AlignCenter
+        )
 
         img_label = ImageLabel()
-        img_label.setImage(cv_to_pixmap(mat).scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        img_label.setImage(
+            cv_to_pixmap(mat).scaled(
+                80,
+                80,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
         self.viewLayout.addWidget(img_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.existing_chars = list(self.manager.get_all_characters().keys())
@@ -81,7 +107,6 @@ class NewCharDialog(MessageBoxBase):
 
 
 class SlotCard(CardWidget):
-
     def __init__(self, index, manager: CustomCharManager, parent=None):
         super().__init__(parent)
         self.index = index
@@ -123,7 +148,14 @@ class SlotCard(CardWidget):
         self.current_h = h
         if mat is not None and getattr(mat, "size", 0) > 0:
             pixmap = cv_to_pixmap(mat)
-            self.image.setImage(pixmap.scaled(120, 120, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.image.setImage(
+                pixmap.scaled(
+                    120,
+                    120,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
         else:
             self.image.setImage(QPixmap())
 
@@ -142,15 +174,24 @@ class SlotCard(CardWidget):
         if dialog.exec():
             char_name, combo_ref = dialog.get_data()
             if char_name and self.current_mat is not None:
-                self.manager.add_feature_to_character(char_name, self.current_mat, width=self.current_w, height=self.current_h)
+                self.manager.add_feature_to_character(
+                    char_name,
+                    self.current_mat,
+                    width=self.current_w,
+                    height=self.current_h,
+                )
                 self.manager.add_character(char_name, combo_ref)
-                if combo_ref and not self.manager.is_builtin_combo(combo_ref) and not self.manager.is_custom_combo_exist(combo_ref):
+                if (
+                    combo_ref
+                    and not self.manager.is_builtin_combo(combo_ref)
+                    and not self.manager.is_custom_combo_exist(combo_ref)
+                ):
                     self.manager.add_combo(combo_ref, "")
                 self.update_result(self.current_mat, self.current_w, self.current_h, char_name)
                 char_manager_signals.refresh_tab.emit()
 
-class FixedTeamSlotCard(CardWidget):
 
+class FixedTeamSlotCard(CardWidget):
     def __init__(self, index, manager: CustomCharManager, parent=None):
         super().__init__(parent)
         self.index = index
@@ -251,15 +292,16 @@ class FixedTeamSlotCard(CardWidget):
         return char_name, combo_ref
 
 
-class TeamScannerTab(CustomTab):
-
-    def __init__(self, manager: CustomCharManager = None):
+class TeamManagerTab(CustomTab):
+    def __init__(self, manager: CustomCharManager = None, owner=None):
         super().__init__()
+        self.owner = owner
+        self._executor = None
         self.tr_scan_btn = og.app.tr("扫描队伍")
         self.tr_scanning = og.app.tr("扫描中...")
-        self.tr_analyzing = og.app.tr("正在分析...")
+        # self.tr_analyzing = og.app.tr("正在分析...")
         self.tr_no_feature = og.app.tr("未获取到特征")
-        self.tr_name_tab = og.app.tr("扫描队伍")
+        self.tr_name_tab = TEAM_MANAGEMENT
         self.tr_scan_desc = og.app.tr("不扫描也可自动战斗，将使用通用脚本")
         self.tr_fixed_team_title = og.app.tr("固定队伍")
         self.tr_fixed_team_enabled = og.app.tr("已启用 {}/4")
@@ -274,26 +316,40 @@ class TeamScannerTab(CustomTab):
         self.tr_fill_failed_desc = og.app.tr("先扫描或手动填写")
         self.tr_fill_partial_title = og.app.tr("已填入扫描结果")
         self.tr_fill_partial_desc = og.app.tr("已填入 {}")
-        self.tr_save_success_title = tr_fmt("{fixed_team}已保存", fixed_team=self.tr_fixed_team_title)
-        self.tr_save_success_desc = tr_fmt("已启用{fixed_team}", fixed_team=self.tr_fixed_team_title)
-        self.tr_disable_success_title = tr_fmt("{fixed_team}已停用", fixed_team=self.tr_fixed_team_title)
+        self.tr_save_success_title = tr_fmt(
+            "{fixed_team}已保存", fixed_team=self.tr_fixed_team_title
+        )
+        self.tr_save_success_desc = tr_fmt(
+            "已启用{fixed_team}", fixed_team=self.tr_fixed_team_title
+        )
+        self.tr_disable_success_title = tr_fmt(
+            "{fixed_team}已停用", fixed_team=self.tr_fixed_team_title
+        )
         self.tr_disable_success_desc = og.app.tr("已恢复自动识别")
-        self.tr_clear_success_title = tr_fmt("{fixed_team}已清空", fixed_team=self.tr_fixed_team_title)
+        self.tr_clear_success_title = tr_fmt(
+            "{fixed_team}已清空", fixed_team=self.tr_fixed_team_title
+        )
         self.tr_clear_success_desc = og.app.tr("已清空槽位")
-        self.tr_fixed_team_desc = og.app.tr("将优先使用固定角色进行战斗，未启用或槽位为空时自动识别")
+        self.tr_fixed_team_desc = og.app.tr(
+            "将优先使用固定角色进行战斗，未启用或槽位为空时自动识别"
+        )
         self.tr_scan_tips = tr_fmt(
-            '增加 <b style="color: #0078d7;">角色特征</b> 后将自动判断当前角色。<br>如果不想管理 <b style="color: #0078d7;">角色特征</b>，可以直接启用 <b style="color: #0078d7;">{fixed_team}</b> 功能。',
+            '增加 <b style="color: #0078d7;">角色特征</b> 后将自动判断当前角色。<br>'
+            '如果不想管理 <b style="color: #0078d7;">角色特征</b>，可以直接启用 '
+            '<b style="color: #0078d7;">{fixed_team}</b> 功能。',
             fixed_team=self.tr_fixed_team_title,
         )
         self.tr_fixed_team_tips = tr_fmt(
-            '<b style="color: #0078d7;">角色</b> 和 <b style="color: #0078d7;">{combo}</b> 支持输入并创建，也支持选择已有项。',
+            '<b style="color: #0078d7;">角色</b> 和 '
+            '<b style="color: #0078d7;">{combo}</b> '
+            '支持输入并创建，也支持选择已有项。',
             combo=COMBO,
         )
 
         self.manager = manager or CustomCharManager()
         self.icon = FluentIcon.CAMERA
         self.last_scan_results = []
-        self.logger.info("Init TeamScannerTab")
+        self.logger.info("Init TeamManagerTab")
 
         self.vbox = QVBoxLayout(self)
         self.vbox.setContentsMargins(20, 20, 20, 20)
@@ -305,7 +361,7 @@ class TeamScannerTab(CustomTab):
         self.scan_layout.setSpacing(12)
 
         self.scan_header = QHBoxLayout()
-        self.scan_title = SubtitleLabel(self.tr_name_tab)
+        self.scan_title = SubtitleLabel(self.tr_scan_btn)
         self.scan_header.addWidget(self.scan_title)
 
         self.scan_info_btn = TransparentToolButton(FluentIcon.INFO, self)
@@ -345,7 +401,9 @@ class TeamScannerTab(CustomTab):
 
         self.fixed_team_info_btn = TransparentToolButton(FluentIcon.INFO, self)
         self.fixed_team_info_btn.clicked.connect(self.show_fixed_team_flyout)
-        self.fixed_team_title_row.addWidget(self.fixed_team_info_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.fixed_team_title_row.addWidget(
+            self.fixed_team_info_btn, alignment=Qt.AlignmentFlag.AlignLeft
+        )
         self.fixed_team_title_row.addStretch(1)
 
         self.fixed_team_status = BodyLabel(self.tr_fixed_team_empty)
@@ -393,8 +451,16 @@ class TeamScannerTab(CustomTab):
         self.refresh_fixed_team_state()
 
     @property
-    def name(self):
-        return self.tr_name_tab
+    def name(self) -> Literal["CustomTab"]:
+        return self.tr_name_tab  # type: ignore
+    
+    @property
+    def executor(self):
+        return self.owner.executor if self.owner else self._executor
+    
+    @executor.setter
+    def executor(self, value):
+        self._executor = value
 
     def _show_bar(self, title: str, content: str, success=True):
         fn = InfoBar.success if success else InfoBar.error
@@ -405,7 +471,7 @@ class TeamScannerTab(CustomTab):
             isClosable=True,
             position=InfoBarPosition.TOP,
             duration=2500 if success else 3500,
-            parent=self.window()
+            parent=self.window(),
         )
 
     def _collect_fixed_team_slots(self, persist=False):
@@ -416,15 +482,21 @@ class TeamScannerTab(CustomTab):
             if char_name:
                 filled_count += 1
                 if persist:
-                    if combo_ref and not self.manager.is_builtin_combo(combo_ref) and not self.manager.is_custom_combo_exist(combo_ref):
+                    if (
+                        combo_ref
+                        and not self.manager.is_builtin_combo(combo_ref)
+                        and not self.manager.is_custom_combo_exist(combo_ref)
+                    ):
                         self.manager.add_combo(combo_ref, "")
                     self.manager.add_character(char_name, combo_ref)
             else:
                 combo_ref = ""
-            slots.append({
-                "char_name": char_name,
-                "combo_ref": combo_ref,
-            })
+            slots.append(
+                {
+                    "char_name": char_name,
+                    "combo_ref": combo_ref,
+                }
+            )
         return slots, filled_count
 
     def reload_fixed_team_options(self):
@@ -460,7 +532,7 @@ class TeamScannerTab(CustomTab):
         self.scan_btn.setEnabled(False)
         self.scan_btn.setText(self.tr_scanning)
         for card in self.slots:
-            card.status.setText(self.tr_analyzing)
+            # card.status.setText(self.tr_analyzing)
             card.btn_act.hide()
         self.get_task(AutoCombatTask).scan_team()
 
@@ -540,19 +612,19 @@ class TeamScannerTab(CustomTab):
     def show_scan_flyout(self):
         Flyout.create(
             icon=InfoBarIcon.INFORMATION,
-            title='Tips',
+            title="Tips",
             content=self.tr_scan_tips,
             target=self.scan_info_btn,
             parent=self,
-            isClosable=False
+            isClosable=False,
         )
 
     def show_fixed_team_flyout(self):
         Flyout.create(
             icon=InfoBarIcon.INFORMATION,
-            title='Tips',
+            title="Tips",
             content=self.tr_fixed_team_tips,
             target=self.fixed_team_info_btn,
             parent=self,
-            isClosable=False
+            isClosable=False,
         )
