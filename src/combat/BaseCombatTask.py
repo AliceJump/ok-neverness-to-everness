@@ -590,10 +590,10 @@ class BaseCombatTask(CombatCheck):
                 self, index, fixed_char_name, confidence=1, combo_ref=fixed_combo_ref
             )
 
-        box = self.get_box_by_name(f"box_char_{index + 1}")
-        if count == 1:
-            offset = int(self.width * -9 / 2560)
-            box = box.copy(x_offset=offset)
+        box = self.get_char_box(index)
+        # if count == 1:
+        #     offset = int(self.width * -9 / 2560)
+        #     box = box.copy(x_offset=offset)
         box_scaled = box.scale(1.1, 1.1)
 
         return get_char_by_pos(self, box_scaled, index, safe_get(self.chars, index))

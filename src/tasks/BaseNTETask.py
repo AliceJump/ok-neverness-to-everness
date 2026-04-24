@@ -1,16 +1,14 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 import cv2
-from ok import BaseTask, Box, og
+from ok import BaseTask, Box, Logger, og
 
 from src.Labels import Labels
 from src.scene.NTEScene import NTEScene
 from src.utils import image_utils as iu
 
-from skimage.metrics import structural_similarity as ssim
-from concurrent.futures import ThreadPoolExecutor
-from ok import Logger, find_boxes_by_name, sort_boxes
 logger = Logger.get_logger(__name__)
 
 class BaseNTETask(BaseTask):
@@ -30,6 +28,12 @@ class BaseNTETask(BaseTask):
     @property
     def main_viewport(self):
         return self.box_of_screen(0.1543, 0.1021, 0.9070, 0.8458)
+
+    def get_char_box(self, index: int):
+        box = self.get_box_by_name(f"box_char_{index + 1}")
+        # offset = -9 * self.width / 2560
+        # return box.copy(x_offset=offset)
+        return box
 
     def is_in_team(self):
         box = self.get_box_by_name(Labels.health_bar_slash)

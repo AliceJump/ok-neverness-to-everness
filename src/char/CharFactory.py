@@ -106,10 +106,10 @@ def get_char_feature_by_pos(
     """
     if frame is None:
         frame = task.frame
-    box = task.get_box_by_name(f"box_char_{index + 1}")
-    if single_char:
-        offset = int(task.width * -9 / 2560)
-        box = box.copy(x_offset=offset)
+    box = task.get_char_box(index)
+    # if single_char:
+    #     offset = int(task.width * -9 / 2560)
+    #     box = box.copy(x_offset=offset)
     if not math.isclose(scale_box, 1.0):
         box = box.scale(scale_box, scale_box)
     return box.crop_frame(frame), task.width, task.height
