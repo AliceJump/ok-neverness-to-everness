@@ -66,4 +66,4 @@ class ScreenPosition:
     @property
     def dialog_icon_box(self) -> Box:
         """对话框右上角图标组box"""
-        return self._scale_box(2164, 67, 2497-2164, 106-67)
+        return self._scale_box(2164, 67, 2497 - 2164, 106 - 67)
