@@ -24,8 +24,16 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
             return
         if self.check_skip():
             return
+        if self.check_dialog_click():
+            return
         if self.skip_message():
             return
+
+    def check_dialog_click(self):
+        if self.find_one(Labels.dialog_history, threshold=0.8, box=self.default_box.dialog_icon_box):
+            if result := self.find_one(Labels.dialog_click, threshold=0.8, vertical_variance=0.02):
+                self.click(result, after_sleep=0.1)
+                return True
 
     def skip_message(self):
         if self.find_one(Labels.message):
