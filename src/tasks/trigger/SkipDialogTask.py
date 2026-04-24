@@ -57,7 +57,7 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
             self.sleep(0.2)
             self.click(0.4508, 0.5194)
             self.click(skip_button)
-            return True
+            # return True
         if self.is_in_team():
             return True
 
