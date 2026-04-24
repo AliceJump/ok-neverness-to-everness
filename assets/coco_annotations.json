@@ -20,7 +20,7 @@
         },
         {
             "id": 4,
-            "file_name": "images/0.png",
+            "file_name": "images/1.png",
             "width": 2560,
             "height": 1440
         },
@@ -264,6 +264,32 @@
             ],
             "area": 13932,
             "iscrowd": 0
+        },
+        {
+            "id": 18,
+            "image_id": 4,
+            "category_id": 18,
+            "bbox": [
+                1272,
+                1358,
+                16,
+                15
+            ],
+            "area": 240,
+            "iscrowd": 0
+        },
+        {
+            "id": 19,
+            "image_id": 4,
+            "category_id": 19,
+            "bbox": [
+                2258,
+                69,
+                38,
+                29
+            ],
+            "area": 1102,
+            "iscrowd": 0
         }
     ],
     "categories": [
@@ -350,6 +376,16 @@
         {
             "id": 17,
             "name": "skip_quest_confirm",
+            "supercategory": ""
+        },
+        {
+            "id": 18,
+            "name": "dialog_click",
+            "supercategory": ""
+        },
+        {
+            "id": 19,
+            "name": "dialog_history",
             "supercategory": ""
         }
     ]

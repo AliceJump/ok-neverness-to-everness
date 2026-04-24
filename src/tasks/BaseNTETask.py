@@ -7,6 +7,7 @@ from ok import BaseTask, Box, Logger, og
 
 from src.Labels import Labels
 from src.scene.NTEScene import NTEScene
+from src.scene.ScreenPosition import ScreenPosition
 from src.utils import image_utils as iu
 
 logger = Logger.get_logger(__name__)
@@ -18,6 +19,7 @@ class BaseNTETask(BaseTask):
         self.key_config = self.get_global_config("Game Hotkey Config")
         self._logged_in = False
         self.arrow_contour = {"contours": None, "shape": None}
+        self.default_box = ScreenPosition(self)
 
     @property
     def thread_pool_executor(self) -> ThreadPoolExecutor:
