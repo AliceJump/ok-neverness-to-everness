@@ -243,7 +243,7 @@ class CombatCheck(BaseNTETask):
         利用屏幕比例动态收缩范围 + 智能颜色遮罩剔除背景杂讯
         """
         if frame is None:
-            frame = self.frame
+            frame = self.frame.copy()
         ratio = self.height / 1440.0
 
         dynamic_scales = set()

@@ -187,7 +187,7 @@ class BaseNTETask(BaseTask):
         return results
 
     def in_world(self) -> bool:
-        frame = self.frame
+        frame = self.frame.copy()
         if self.arrow_contour["shape"] != frame.shape[:2]:
             template_bgr = self.get_feature_by_name(Labels.mini_map_arrow).mat
             t_bin = template_bgr[:, :, 0]
