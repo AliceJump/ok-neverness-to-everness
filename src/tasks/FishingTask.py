@@ -44,7 +44,8 @@ class FishingTask(BaseNTETask):
         self._last_bar_log_time = 0.0
         self._morph_kernel = np.ones((3, 3), dtype=np.uint8)
         self._bar_active_key = None
-
+        self.add_exit_after_config()
+        
     def click(self, *args, **kwargs):
         kwargs.setdefault("move", True)
         return super().click(*args, **kwargs)
