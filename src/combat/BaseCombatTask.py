@@ -702,11 +702,13 @@ class BaseCombatTask(CombatCheck):
         # self.screenshot("load_chars_element", _frame)
 
         for i in range(count):
+            base_scale = 16
+            scale = base_scale * 1440 / self.height
             current_box = base_box.copy(y_offset=vertical_spacing * i)
             crop_img = current_box.crop_frame(_frame)
             crop_h, crop_w = crop_img.shape[:2]
             crop_resized = cv2.resize(
-                crop_img, (int(crop_w * 16), int(crop_h * 16)), interpolation=cv2.INTER_NEAREST
+                crop_img, (int(crop_w * scale), int(crop_h * scale)), interpolation=cv2.INTER_NEAREST
             )
             # iu.show_images([crop_resized, crop_img], [f"crop_resized_{i}", f"crop_img_{i}"])
 
