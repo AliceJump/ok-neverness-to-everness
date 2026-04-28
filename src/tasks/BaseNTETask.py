@@ -561,7 +561,7 @@ class BaseNTETask(BaseTask):
 
 
 def interac_mask(image):
-    mask = iu.create_color_mask(image, interac_pink_color, binary=True)
+    mask = iu.create_color_mask(image, interac_pink_color, to_bgr=False)
     kernel = np.ones((3, 3), np.uint8)
     dilated_mask = cv2.dilate(mask, kernel, iterations=1)
     return dilated_mask

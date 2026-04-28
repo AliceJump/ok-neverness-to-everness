@@ -283,10 +283,10 @@ class FishingTask(BaseNTETask):
             return None
 
         green_mask = iu.filter_by_hsv(
-            image, iu.HSVRange((50, 150, 160), (160, 220, 255)), binary=True
+            image, iu.HSVRange((50, 150, 160), (160, 220, 255)), return_mask=True
         )
         yellow_mask = iu.filter_by_hsv(
-            image, iu.HSVRange((20, 60, 195), (55, 200, 255)), binary=True
+            image, iu.HSVRange((20, 60, 195), (55, 200, 255)), return_mask=True
         )
 
         # iu.show_images([green_mask, yellow_mask], names=["green_mask", "yellow_mask"], wait_key=1)
@@ -377,7 +377,7 @@ class FishingTask(BaseNTETask):
         box = self.box_of_screen(*self.BITE_INDICATOR_BOX, name="fishing_bite_indicator")
         image = box.crop_frame(self.frame)
 
-        blue_mask = iu.create_color_mask(image, fishing_bite_blue_color, binary=True)
+        blue_mask = iu.create_color_mask(image, fishing_bite_blue_color, to_bgr=False)
 
         h, w = blue_mask.shape[:2]
         center = (w // 2, h // 2)
