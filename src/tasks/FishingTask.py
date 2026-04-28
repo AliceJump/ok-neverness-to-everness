@@ -37,6 +37,12 @@ class FishingTask(BaseNTETask):
                 "离散按键倍数": 1.0,
             }
         )
+        self.config_description.update(
+            {
+                "控条方式": "状态切换：快，持续按住，平滑流畅\n离散按键：慢，防止过冲",
+                "离散按键倍数": "控制实际的按键hold时间，倍数根据实际情况自行调整",
+            }
+        )
         self.config_type["控条方式"] = {
             "type": "drop_down",
             "options": ["状态切换", "离散按键"],
