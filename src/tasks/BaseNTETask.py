@@ -422,7 +422,7 @@ class BaseNTETask(BaseTask):
         if not travel_btn:
             travel_btn = self.find_traval_button()
         if travel_btn:
-            self.sleep(0.5)
+            self.sleep(0.1)
             self.click(travel_btn, after_sleep=1, move=True, down_time=0.01)
             return True
         return False

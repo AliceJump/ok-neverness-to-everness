@@ -559,6 +559,19 @@
             ],
             "area": 7194,
             "iscrowd": 0
+        },
+        {
+            "id": 37,
+            "image_id": 4,
+            "category_id": 37,
+            "bbox": [
+                2163,
+                68,
+                31,
+                34
+            ],
+            "area": 1054,
+            "iscrowd": 0
         }
     ],
     "categories": [
@@ -740,6 +753,11 @@
         {
             "id": 36,
             "name": "teleport",
+            "supercategory": ""
+        },
+        {
+            "id": 37,
+            "name": "auto_play",
             "supercategory": ""
         }
     ]
