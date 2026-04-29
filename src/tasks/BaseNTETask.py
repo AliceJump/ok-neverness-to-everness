@@ -382,8 +382,10 @@ class BaseNTETask(BaseTask):
         self.send_key_up("w")
 
     def find_traval_button(self):
-        box = self.box_of_screen(0.8160, 0.8549, 0.9902, 0.9292)
-        return self.find_one(Labels.skip_quest_confirm, box=box, use_gray_scale=True, threshold=0.6)
+        box = self.get_box_by_name(Labels.teleport)
+        w = box.width - (box.x - self.width_of_screen(0.9906))
+        box = box.copy(width_offset=w)
+        return self.find_one(Labels.teleport, box=box)
 
     def click_traval_button(self, travel_btn=None):
         if not travel_btn:

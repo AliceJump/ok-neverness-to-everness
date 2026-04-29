@@ -17,7 +17,7 @@ class FastTravelTask(BaseNTETask, TriggerTask):
         self.match = ["Teleport", "传送"]
 
     def run(self):
-        if self.scene.in_team(self.is_in_team):
+        if self.scene.in_team(self.is_in_team) or not self.find_one(Labels.map_location_card):
             return
         if btn := self.find_traval_button():
             to_x = (btn.x + btn.width) / self.width
