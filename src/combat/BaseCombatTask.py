@@ -341,9 +341,9 @@ class BaseCombatTask(CombatCheck):
                 switch_to = char
 
         if has_intro and max_priority < Priority.FAST_SWITCH:
-            switch_to = self.find_element_ring_reaction_target(current_char)
-            if switch_to:
-                return switch_to, has_intro
+            reaction_target = self.find_element_ring_reaction_target(current_char)
+            if reaction_target:
+                return reaction_target, has_intro
 
         return switch_to, has_intro
 
