@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-
 from ok import Box, Logger, find_color_rectangles
+
 from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask
 from src.utils import game_filters as gf
@@ -110,67 +110,73 @@ class CombatCheck(BaseNTETask):
         box = self.box_of_screen(0.2, 0.2, 0.8, 0.6389)
         roi = box.crop_frame(frame)
         self.draw_boxes("find_target", box, color="blue")
-        
+
         # 2. 还原世界亮度 (确保彩色特征在滤镜下依然可用)
         roi = iu.restore_world_brightness(roi)
-        
+
         # 3. 准备彩色模板
         target_feature = self.get_feature_by_name(Labels.target)
         if target_feature is None:
             return None
         template_bgr = target_feature.mat
-        
+
         best_res = None
-        
+
         # 4. 多尺度彩色模板匹配 (Color-Aware Template Matching)
         # 采用更精细的缩放步长 (0.1)，确保能捕捉到远处的微小目标 (如 0.6 倍率的小图标)
         for scale in np.arange(1, 0.2, -0.2):
             tw = int(template_bgr.shape[1] * scale)
             th = int(template_bgr.shape[0] * scale)
-            if tw < 10 or th < 10: continue
+            if tw < 10 or th < 10:
+                continue
             tpl_scaled = cv2.resize(template_bgr, (tw, th))
-            
+
             # 使用归一化相关系数匹配
             res_map = cv2.matchTemplate(roi, tpl_scaled, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(res_map)
-            
+
             # 严格色彩匹配门槛：必须 > 0.6 才能有效过滤纯白色特效
             if max_val > 0.6:
                 tx, ty = max_loc
-                
+
                 # 5. 二次校验：对称性校验
-                crop_bgr = roi[ty:ty+th, tx:tx+tw]
+                crop_bgr = roi[ty : ty + th, tx : tx + tw]
                 crop_gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
                 # 使用较宽容的二值化以保留小目标的轮廓特征
                 _, crop_bin = cv2.threshold(crop_gray, 180, 255, cv2.THRESH_BINARY)
-                
+
                 white_count = cv2.countNonZero(crop_bin)
-                if white_count < 5: continue
-                
-                h_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 1))) / white_count
-                v_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 0))) / white_count
+                if white_count < 5:
+                    continue
+
+                h_sym = (
+                    cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 1))) / white_count
+                )
+                v_sym = (
+                    cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 0))) / white_count
+                )
                 sym_score = (h_sym + v_sym) / 2
-                
+
                 # 综合加权评分：彩色特征 (2/3) + 几何对称性 (1/3)
                 score = (max_val * 2 + sym_score) / 3
-                
+
                 if score > 0.55:
-                    if best_res is None or score > best_res['confidence']:
+                    if best_res is None or score > best_res["confidence"]:
                         best_res = {
-                            'x': box.x + tx + tw // 2,
-                            'y': box.y + ty + th // 2,
-                            'w': tw,
-                            'h': th,
-                            'confidence': score
+                            "x": box.x + tx + tw // 2,
+                            "y": box.y + ty + th // 2,
+                            "w": tw,
+                            "h": th,
+                            "confidence": score,
                         }
 
         if best_res:
             result_box = Box(
-                best_res['x'] - best_res['w'] // 2,
-                best_res['y'] - best_res['h'] // 2,
-                width=best_res['w'],
-                height=best_res['h'],
-                confidence=best_res['confidence'],
+                best_res["x"] - best_res["w"] // 2,
+                best_res["y"] - best_res["h"] // 2,
+                width=best_res["w"],
+                height=best_res["h"],
+                confidence=best_res["confidence"],
             )
             self.draw_boxes("target", result_box, color="red")
             return result_box
@@ -188,7 +194,7 @@ class CombatCheck(BaseNTETask):
         return template
 
     def has_health_bar(self):
-        if self._find_red_health_bar(): # or self._find_boss_health_bar():
+        if self._find_red_health_bar():  # or self._find_boss_health_bar():
             return True
         return False
 
@@ -293,18 +299,43 @@ class CombatCheck(BaseNTETask):
                 return self._in_combat
 
     def find_lv(self, frame=None):
-        def ocr_processor(img):
-            img = iu.restore_world_brightness(img)
-            return gf.isolate_lv_to_black(img)
+        # now = time.time()
+        if frame is None:
+            frame = self.frame
+        frame = gf.isolate_lv_to_black(frame)
+        # 计算基于 2K (2560x1440) 分辨率的目标矩形面积
+        scale = self.width / 2560.0
+        # 使用范围型体积过滤：从单个小字符到完整的 Lv+数字 区域
+        min_area = (15 * scale) * (15 * scale) * 0.8
+        max_area = (20 * scale) * (20 * scale) * 1.2
 
-        return self.ocr(
+        # 转换为二值图并取反（使文字区域为白色 255，背景为黑色 0）
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        binary = cv2.bitwise_not(gray)
+
+        # 连通域分析
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary)
+
+        # 过滤：只保留矩形范围面积在 [min_area, max_area] 之间的部分
+        new_binary = np.zeros_like(binary)
+        for i in range(1, num_labels):
+            w = stats[i, cv2.CC_STAT_WIDTH]
+            h = stats[i, cv2.CC_STAT_HEIGHT]
+            # 这里使用矩形框面积 (w * h) 进行过滤
+            if min_area <= (w * h) <= max_area:
+                new_binary[labels == i] = 255
+
+        # 还原回 BGR 格式：文字为黑 (0)，背景为白 (255)
+        frame = cv2.cvtColor(cv2.bitwise_not(new_binary), cv2.COLOR_GRAY2BGR)
+
+        res = self.ocr(
             frame=frame,
             box=self.main_viewport,
-            frame_processor=ocr_processor,
             match=re.compile(r"lv", re.IGNORECASE),
-            target_height=720,
             lib="bg_onnx_ocr",
         )
+        # self.log_debug(f"find_lv time: {time.time() - now}")
+        return res
 
     def combat_detect(self, frame=None, target=True, lv=True):
         if frame is None:
