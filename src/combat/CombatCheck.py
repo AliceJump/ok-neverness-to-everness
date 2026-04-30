@@ -18,6 +18,8 @@ logger = Logger.get_logger(__name__)
 
 
 class CombatCheck(BaseNTETask):
+    TARGET_MATCH_SCALES = (0.6, 0.7, 0.8, 0.9, 1.0)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._in_ultimate = False
@@ -32,6 +34,9 @@ class CombatCheck(BaseNTETask):
         self.target_enemy_error_notified = False
         self.cds = {}
         self.combat_detect_future = None
+        self._combat_detect_settle = None
+        self._target_template_cache_key = None
+        self._target_match_templates = None
 
     @property
     def in_ultimate(self):
@@ -54,6 +59,7 @@ class CombatCheck(BaseNTETask):
     def do_reset_to_false(self):
         self.cds = {}
         self._in_combat = False
+        self._combat_detect_settle = None
         self.scene.set_not_in_combat()
         return False
 
@@ -92,7 +98,8 @@ class CombatCheck(BaseNTETask):
                 logger.info(f"target lost try retarget {self.target_enemy_time_out}")
                 start = time.time()
                 while time.time() - start < self.target_enemy_time_out:
-                    self.middle_click(interval=0.4)
+                    self.middle_click()
+                    self.sleep(0.2)
                     if self.combat_detect()[0] is True:
                         return True
                     self.next_frame()
@@ -102,6 +109,62 @@ class CombatCheck(BaseNTETask):
         ret = self.find_target(frame=frame)
         # logger.debug(f"has_target cost {time.perf_counter() - now:.3f}")
         return ret
+
+    def _get_target_match_templates(self, template_bgr):
+        cache_key = (id(template_bgr), template_bgr.shape)
+        if self._target_template_cache_key == cache_key and self._target_match_templates:
+            return self._target_match_templates
+
+        tpl_gray = cv2.cvtColor(template_bgr, cv2.COLOR_BGR2GRAY)
+        tpl_edge = cv2.Canny(tpl_gray, 50, 150)
+
+        match_templates = []
+        for scale in self.TARGET_MATCH_SCALES:
+            tw = int(template_bgr.shape[1] * scale)
+            th = int(template_bgr.shape[0] * scale)
+            if tw < 12 or th < 12:
+                continue
+            match_templates.append(
+                {
+                    "w": tw,
+                    "h": th,
+                    "bgr": cv2.resize(template_bgr, (tw, th)),
+                    "edge": cv2.resize(tpl_edge, (tw, th)),
+                }
+            )
+
+        self._target_template_cache_key = cache_key
+        self._target_match_templates = match_templates
+        return match_templates
+
+    def _score_target_candidate(self, roi_bin, roi_shape, tx, ty, tw, th, score_base):
+        crop_bin = roi_bin[ty : ty + th, tx : tx + tw]
+        white_count = cv2.countNonZero(crop_bin)
+        if white_count < 5:
+            return None
+
+        h_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 1))) / white_count
+        v_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 0))) / white_count
+        sym_score = (h_sym + v_sym) / 2
+
+        pad = 5
+        if ty >= pad and tx >= pad and ty + th + pad < roi_shape[0] and tx + tw + pad < roi_shape[1]:
+            outer_bin = roi_bin[ty - pad : ty + th + pad, tx - pad : tx + tw + pad]
+            outer_white = cv2.countNonZero(outer_bin)
+            iso_score = white_count / outer_white if outer_white > 0 else 0
+        else:
+            iso_score = 0.7
+
+        score = (score_base * 2 + sym_score * 2 + iso_score) / 5
+        return {
+            "tx": tx,
+            "ty": ty,
+            "w": tw,
+            "h": th,
+            "confidence": score,
+            "sym_score": sym_score,
+            "iso_score": iso_score,
+        }
 
     def find_target(self, frame=None):
         if frame is None:
@@ -119,74 +182,50 @@ class CombatCheck(BaseNTETask):
         if target_feature is None:
             return None
         template_bgr = target_feature.mat
-        
+        match_templates = self._get_target_match_templates(template_bgr)
+
         # 4. 预处理：边缘图与二值图 (用于处理内核/空心图标并过滤杂讯)
         roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        roi_edge = cv2.Canny(roi_gray, 50, 150)
         _, roi_bin = cv2.threshold(roi_gray, 180, 255, cv2.THRESH_BINARY)
-        
-        # 提取模板的边缘特征
-        tpl_gray = cv2.cvtColor(template_bgr, cv2.COLOR_BGR2GRAY)
-        tpl_edge = cv2.Canny(tpl_gray, 50, 150)
-        
+        roi_edge = None
+
         best_res = None
-        
+
         # 5. 多尺度搜索
-        for scale in np.arange(0.4, 1.5, 0.1):
-            tw = int(template_bgr.shape[1] * scale)
-            th = int(template_bgr.shape[0] * scale)
-            if tw < 12 or th < 12: continue
-            
-            tpl_bgr_scaled = cv2.resize(template_bgr, (tw, th))
-            tpl_edge_scaled = cv2.resize(tpl_edge, (tw, th))
-            
+        for tpl in match_templates:
+            tw = tpl["w"]
+            th = tpl["h"]
             # 模式 A: 彩色匹配 (针对完整图标，置信度高)
-            res_c = cv2.matchTemplate(roi, tpl_bgr_scaled, cv2.TM_CCOEFF_NORMED)
+            res_c = cv2.matchTemplate(roi, tpl["bgr"], cv2.TM_CCOEFF_NORMED)
             _, max_val_c, _, max_loc_c = cv2.minMaxLoc(res_c)
-            
-            # 模式 B: 边缘匹配 (针对空心/只有内核的图标)
-            res_e = cv2.matchTemplate(roi_edge, tpl_edge_scaled, cv2.TM_CCOEFF_NORMED)
-            _, max_val_e, _, max_loc_e = cv2.minMaxLoc(res_e)
-            
+
             # 挑选候选者
             if max_val_c > 0.6:
                 tx, ty, score_base = max_loc_c[0], max_loc_c[1], max_val_c
-            elif max_val_e > 0.5:
+            else:
+                # 模式 B: 边缘匹配 (针对空心/只有内核的图标)
+                if roi_edge is None:
+                    roi_edge = cv2.Canny(roi_gray, 50, 150)
+                res_e = cv2.matchTemplate(roi_edge, tpl["edge"], cv2.TM_CCOEFF_NORMED)
+                _, max_val_e, _, max_loc_e = cv2.minMaxLoc(res_e)
+                if max_val_e <= 0.5:
+                    continue
                 # 边缘匹配作为兜底，门槛稍低，但后续对称性校验会更严
                 tx, ty, score_base = max_loc_e[0], max_loc_e[1], max_val_e
-            else:
-                continue
-                
+
             # 6. 二次校验：几何特征
-            crop_bin = roi_bin[ty:ty+th, tx:tx+tw]
-            white_count = cv2.countNonZero(crop_bin)
-            if white_count < 5: continue
-            
-            # 对称性：菱形图标的核心属性
-            h_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 1))) / white_count
-            v_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 0))) / white_count
-            sym_score = (h_sym + v_sym) / 2
-            
-            # 孤立性：真正的 UI 图标周围应该有空隙，粒子特效通常成堆出现
-            pad = 5
-            if ty >= pad and tx >= pad and ty + th + pad < roi.shape[0] and tx + tw + pad < roi.shape[1]:
-                outer_bin = roi_bin[ty-pad:ty+th+pad, tx-pad:tx+tw+pad]
-                outer_white = cv2.countNonZero(outer_bin)
-                iso_score = white_count / outer_white if outer_white > 0 else 0
-            else:
-                iso_score = 0.7
-                
-            # 综合评分：彩色/边缘得分 (2) + 对称性 (2) + 孤立性 (1)
-            score = (score_base * 2 + sym_score * 2 + iso_score) / 5
-            
-            if score > 0.6:
-                if best_res is None or score > best_res['confidence']:
+            candidate = self._score_target_candidate(roi_bin, roi.shape, tx, ty, tw, th, score_base)
+            if candidate is None:
+                continue
+
+            if candidate["confidence"] > 0.6:
+                if best_res is None or candidate["confidence"] > best_res["confidence"]:
                     best_res = {
-                        'x': box.x + tx + tw // 2,
-                        'y': box.y + ty + th // 2,
-                        'w': tw,
-                        'h': th,
-                        'confidence': score
+                        "x": box.x + tx + tw // 2,
+                        "y": box.y + ty + th // 2,
+                        "w": tw,
+                        "h": th,
+                        "confidence": candidate["confidence"],
                     }
 
         if best_res:
@@ -289,8 +328,18 @@ class CombatCheck(BaseNTETask):
             if self.combat_end_condition is not None and self.combat_end_condition():
                 return self.reset_to_false(reason="end condition reached")
             combat_detect = self.async_combat_detect()
-            if combat_detect is None or combat_detect is True:
+            
+            if combat_detect is None:
                 return self.scene.set_in_combat()
+            elif combat_detect is True:
+                self._combat_detect_settle = None
+                return self.scene.set_in_combat()
+            else:
+                if self._combat_detect_settle is None:
+                    self._combat_detect_settle = time.time()
+                if time.time() - self._combat_detect_settle < 1:
+                    return self.scene.set_in_combat()
+
             if self.target_enemy(wait=True):
                 logger.debug("retarget enemy succeeded")
                 return self.scene.set_in_combat()
@@ -317,7 +366,7 @@ class CombatCheck(BaseNTETask):
                 self._in_combat = self.load_chars()
                 return self._in_combat
 
-    def find_lv(self, frame=None):
+    def find_lv(self, frame=None, bg=False):
         # now = time.time()
         if frame is None:
             frame = self.frame
@@ -347,21 +396,26 @@ class CombatCheck(BaseNTETask):
         # 还原回 BGR 格式：文字为黑 (0)，背景为白 (255)
         frame = cv2.cvtColor(cv2.bitwise_not(new_binary), cv2.COLOR_GRAY2BGR)
 
+        if bg:
+            lib = "bg_onnx_ocr"
+        else:
+            lib = "default"
+
         res = self.ocr(
             frame=frame,
             box=self.main_viewport,
             match=re.compile(r"lv", re.IGNORECASE),
-            lib="bg_onnx_ocr",
+            lib=lib,
         )
         # self.log_debug(f"find_lv time: {time.time() - now}")
         return res
 
-    def combat_detect(self, frame=None, target=True, lv=True):
+    def combat_detect(self, frame=None, target=True, lv=True, bg=False):
         if frame is None:
             frame = self.frame
         if target and self.has_target(frame=frame):
             return True, "target"
-        if lv and self.find_lv(frame=frame):
+        if lv and self.find_lv(frame=frame, bg=bg):
             return True, "lv"
         return False, None
 
@@ -375,7 +429,7 @@ class CombatCheck(BaseNTETask):
             # self.logger.info("combat_detect_future submit")
             frame = self.frame
             self.combat_detect_future = self.thread_pool_executor.submit(
-                self.combat_detect, frame=frame, target=target, lv=lv
+                self.combat_detect, frame=frame, target=target, lv=lv, bg=True
             )
         return None
 

@@ -149,16 +149,29 @@ class BaseNTETask(BaseTask):
 
     def _get_char_template_data(self):
         """延迟加载并缓存模板掩码和覆盖面积"""
-        if not hasattr(self, "_char_template_mat"):
+        if (
+            not hasattr(self, "_char_template_cache")
+            or self._char_template_cache.get("width") != self.width
+            or self._char_template_cache.get("height") != self.height
+        ):
             feature = self.get_feature_by_name(Labels.is_current_char)
-            self._char_template_mat = feature.mat  # 原始二值化模板
-            self._template_white_pixels = cv2.countNonZero(self._char_template_mat)
+            mat = feature.mat  # 原始二值化模板
+            white_pixels = cv2.countNonZero(mat)
             
             # 仍然保留膨胀掩码用于过滤
             kernel = np.ones((5, 5), np.uint8)
-            self._char_template_mask = cv2.dilate(feature.mat, kernel, iterations=1)
+            mask = cv2.dilate(feature.mat, kernel, iterations=1)
             
-        return self._char_template_mat, self._char_template_mask, self._template_white_pixels
+            self._char_template_cache = {
+                "width": self.width,
+                "height": self.height,
+                "mat": mat,
+                "mask": mask,
+                "white_pixels": white_pixels
+            }
+            
+        cache = self._char_template_cache
+        return cache["mat"], cache["mask"], cache["white_pixels"]
 
     def get_char_match_score(self, index):
         """获取指定位置的匹配得分（基于像素覆盖率），分值越小越匹配"""
@@ -187,7 +200,12 @@ class BaseNTETask(BaseTask):
 
     def is_char_at_index(self, index, threshold=0.3):
         """判断指定索引是否为当前角色"""
-        return self.get_char_match_score(index) < threshold
+        score = self.get_char_match_score(index)
+        new = f"idx {index} conf {score:.3f}"
+        if self.info_get("current char") != new:
+            self.info_set("current char", new)
+        if score < threshold:
+            return True
 
     def get_current_char_index(self):
         """扫描所有槽位，返回匹配度最高的索引"""
