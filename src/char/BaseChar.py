@@ -240,6 +240,7 @@ class BaseChar:
         send_click=True,
         animation_min_duration=0,
         time_out=0,
+        hold=False,
     ):
         """尝试释放技能。
 
@@ -249,6 +250,7 @@ class BaseChar:
             send_click (bool, optional): 在释放技能前是否发送普通点击。默认为 True。
             animation_min_duration (float, optional): 动画的最短持续时间。默认为 0。
             time_out (float, optional): 技能释放的超时时间。默认为 0。
+            hold (bool, optional): 是否按住技能键直到技能不可用。默认为 False。
 
         Returns:
             tuple: (是否成功点击 (bool), 技能持续时间 (float), 是否检测到动画 (bool))。
@@ -260,59 +262,74 @@ class BaseChar:
         skill_click_time = 0
         start = time.time()
         animation_start = 0
+        is_holding = False
         if time_out == 0:
             the_time_out = SKILL_TIME_OUT
         else:
             the_time_out = time_out
-        while True:
-            if time.time() - start > the_time_out:
-                self.task.in_ultimate = False
-                if the_time_out == 0:
-                    self.alert_skill_failed()
-                break
-            elif self.task.in_ultimate and time.time() - start > 6:
-                self.task.in_ultimate = False
-                break
-            if has_animation:
-                if not self.task.is_in_team():
-                    self.task.in_ultimate = True
-                    animation_start = time.time()
-                    the_time_out = SKILL_TIME_OUT
-                    if time.time() - skill_click_time > 6:
-                        self.task.in_ultimate = False
-                        self.logger.error("skill animation too long, breaking")
-                    self.task.next_frame()
-                    self.check_combat()
-                    continue
-                elif self.task.in_ultimate:
+
+        try:
+            while True:
+                if time.time() - start > the_time_out:
                     self.task.in_ultimate = False
-                    self.logger.debug("click_skill animated break")
+                    if time_out == 0:
+                        self.alert_skill_failed()
                     break
+                elif self.task.in_ultimate and time.time() - start > 6:
+                    self.task.in_ultimate = False
+                    break
+                if has_animation:
+                    if not self.task.is_in_team():
+                        self.task.in_ultimate = True
+                        animation_start = time.time()
+                        the_time_out = SKILL_TIME_OUT
+                        if time.time() - skill_click_time > 6:
+                            self.task.in_ultimate = False
+                            self.logger.error("skill animation too long, breaking")
+                        self.task.next_frame()
+                        self.check_combat()
+                        continue
+                    elif self.task.in_ultimate:
+                        self.task.in_ultimate = False
+                        self.logger.debug("click_skill animated break")
+                        break
 
-            self.check_combat()
-            now = time.time()
-            if not self.skill_available() and (
-                not has_animation or now - start > animation_min_duration
-            ):
-                self.logger.debug("click_skill not available break")
-                break
-            self.logger.debug("click_skill skill_available click")
+                self.check_combat()
+                now = time.time()
+                if not self.skill_available() and (
+                    not has_animation or now - start > animation_min_duration
+                ):
+                    self.logger.debug("click_skill not available break")
+                    break
+                self.logger.debug("click_skill skill_available click")
 
-            if now - last_click > 0.1:
-                if send_click and last_op == "skill":
-                    self.click()
-                    last_op = "click"
-                    continue
-                if self.skill_available():
-                    if skill_click_time == 0:
-                        clicked = True
-                        skill_click_time = now
-                    last_op = "skill"
-                    self.send_skill_key()
-                    if has_animation:  # sleep if there will be an animation like Jinhsi
-                        self.sleep(0.2, check_combat=False)
-                last_click = now
-            self.task.next_frame()
+                if hold:
+                    if not is_holding:
+                        if skill_click_time == 0:
+                            clicked = True
+                            skill_click_time = now
+                        self.task.send_key_down(self.get_skill_key())
+                        is_holding = True
+                else:
+                    if now - last_click > 0.1:
+                        if send_click and last_op == "skill":
+                            self.click()
+                            last_op = "click"
+                            continue
+                        if self.skill_available():
+                            if skill_click_time == 0:
+                                clicked = True
+                                skill_click_time = now
+                            last_op = "skill"
+                            self.send_skill_key()
+                            if has_animation:  # sleep if there will be an animation like Jinhsi
+                                self.sleep(0.2, check_combat=False)
+                        last_click = now
+                self.task.next_frame()
+        finally:
+            if is_holding:
+                self.task.send_key_up(self.get_skill_key())
+
         self.task.in_ultimate = False
         if clicked:
             self.sleep(post_sleep)
@@ -647,13 +664,13 @@ class BaseChar:
                 （如 'w'、'a'、's'、'd'）。
         """
         if direction_key is not None:
-            self.send_key_down(direction_key)
+            self.task.send_key_down(direction_key)
             self.task.next_frame()
         start = time.time()
         while time.time() - start < duration:
             self.click(interval=interval, key="right")
         if direction_key is not None:
-            self.send_key_up(direction_key)
+            self.task.send_key_up(direction_key)
 
     def normal_attack(self):
         """执行一次普通攻击。"""
