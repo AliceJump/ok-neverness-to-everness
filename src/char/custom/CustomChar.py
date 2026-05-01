@@ -55,7 +55,14 @@ class CustomChar(BaseChar):
         PARAM_REQ_KEY = "按键，必填"
         DOC_MOUSE_BUTTON = "鼠标按键left、right、middle, 不填默认left"
         return [
-            Cmd("skill", cls.custom_click_skill, PARAM_NONE, "释放技能", "skill", True),
+            Cmd(
+                "skill",
+                cls.custom_click_skill,
+                "是否长按(True/False)，默认False",
+                "释放技能",
+                "skill, skill(True)",
+                True,
+            ),
             Cmd("ultimate", cls.click_ultimate, PARAM_NONE, "释放终结技", "ultimate", True),
             Cmd("arc", cls.click_arc, PARAM_NONE, "释放弧盘技能", "arc", False),
             Cmd(
@@ -406,5 +413,5 @@ class CustomChar(BaseChar):
     def keypress(self, key):
         self.task.send_key(key=key)
 
-    def custom_click_skill(self) -> bool:
-        return self.click_skill()[0]
+    def custom_click_skill(self, hold=False) -> bool:
+        return self.click_skill(hold=hold)[0]
