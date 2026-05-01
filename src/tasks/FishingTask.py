@@ -35,14 +35,14 @@ class FishingTask(BaseNTETask):
                 "循环次数": 1,
                 "控条模式": "长按",
                 "点按时长倍率": 1.0,
-                "使用esc": False
+                "使用ESC": False
             }
         )
         self.config_description.update(
             {
                 "控条模式": "长按：平滑流畅, 易过冲\n点按: 安全较慢, 防过冲",
                 "点按时长倍率": "点按模式专用。用于微调每次按键的持续时间",
-                "使用esc": "开启后优先通过 ESC 键关闭成功界面，避免后台抢占鼠标。\n"
+                "使用ESC": "开启后优先通过 ESC 键关闭成功界面，避免后台抢占鼠标。\n"
                 "若游戏运行不流畅，可能因按键响应延迟导致误退出钓鱼场景",
             }
         )
@@ -348,7 +348,7 @@ class FishingTask(BaseNTETask):
         return True
 
     def do_close_success_overlay(self):
-        if self.config.get("使用esc"):
+        if self.config.get("使用ESC"):
             self.send_key("esc", interval=2)
         else:
             x, y = self.SUCCESS_CLOSE_POS
