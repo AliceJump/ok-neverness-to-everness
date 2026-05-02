@@ -39,9 +39,8 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
                 return
             self.check_dialog_click()
 
-        if self.config.get("自动消息"):
-            if self.skip_message():
-                return
+        if self.config.get("自动消息") and self.skip_message():
+            return
 
     def in_story(self):
         return self.find_one(Labels.auto_play) or self.find_skip() or self.find_dialog_history()
@@ -72,30 +71,13 @@ class SkipDialogTask(TriggerTask, BaseNTETask):
                 return True
 
     def skip_message(self):
-        if self.find_one(Labels.message):
-            if self.find_message_dialog():
-                self.sleep(0.1)
-                message_dialog = self.find_message_dialog()
-                if message_dialog:
-                    self.operate_click(message_dialog)
-                    self.sleep(1)
-                    self.log_info(f"click {message_dialog}")
-            # else:
-            #     try:
-            #         self.mouse_down(0.4223, 0.7236)
-            #         self.wait_until(
-            #             lambda: (
-            #                 self.find_one(
-            #                     Labels.message_dialog,
-            #                     vertical_variance=0.15,
-            #                     horizontal_variance=0.01,
-            #                 )
-            #                 or not self.find_one(Labels.message)
-            #             ),
-            #             time_out=30,
-            #         )
-            #     finally:
-            #         self.mouse_up(0.4223, 0.7236)
+        if self.find_one(Labels.message) and self.find_message_dialog():
+            self.sleep(0.1)
+            message_dialog = self.find_message_dialog()
+            if message_dialog:
+                self.operate_click(message_dialog)
+                self.sleep(1)
+                self.log_info(f"click {message_dialog}")
 
     def find_message_dialog(self):
         return self.find_one(Labels.message_dialog, vertical_variance=0.2, horizontal_variance=0.01)

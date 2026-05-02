@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from ok import TaskDisabledException, find_color_rectangles
+from ok import TaskDisabledException, find_color_rectangles, CannotFindException
 from qfluentwidgets import FluentIcon
 
 from src import text_white_color
@@ -137,7 +137,7 @@ class DailyTask(BaseNTETask):
         result = self.wait_panel(Labels.mail_panel)
         if not result:
             self.log_error("无法找到邮件面板", notify=True)
-            raise Exception("can't find mail panel")
+            raise CannotFindException("can't find mail panel")
         return result
 
     def claim_mail(self):

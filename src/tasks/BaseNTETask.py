@@ -11,7 +11,7 @@ import win32api
 import win32con
 import win32gui
 import win32process
-from ok import BaseTask, Box, Logger, og, safe_get
+from ok import BaseTask, Box, Logger, og, safe_get, CannotFindException
 
 from src.Labels import Labels
 from src.scene.NTEScene import NTEScene
@@ -37,7 +37,7 @@ class BaseNTETask(BaseTask):
         self.next_monthly_card_start = 0
 
     @property
-    def thread_pool_executor(self) -> ThreadPoolExecutor:
+    def thread_pool_executor(self) -> ThreadPoolExecutor | None:
         if og.my_app is None:
             return None
         return og.my_app.get_thread_pool_executor()
@@ -514,7 +514,7 @@ class BaseNTETask(BaseTask):
         result = self.wait_panel(Labels.f1_panel)
         if not result:
             self.log_error("can't find panel, make sure f1 is the hotkey for panel", notify=True)
-            raise Exception("can't find panel, make sure f1 is the hotkey for panel")
+            raise CannotFindException("can't find panel, make sure f1 is the hotkey for panel")
         return result
 
     def openF2panel(self):
@@ -527,7 +527,7 @@ class BaseNTETask(BaseTask):
         result = self.wait_panel(Labels.f2_panel)
         if not result:
             self.log_error("can't find panel, make sure f2 is the hotkey for panel", notify=True)
-            raise Exception("can't find panel, make sure f2 is the hotkey for panel")
+            raise CannotFindException("can't find panel, make sure f2 is the hotkey for panel")
         return result
 
     def wait_panel(self, feature, box=None, threshold=0.8, time_out=4.5):
@@ -549,7 +549,7 @@ class BaseNTETask(BaseTask):
         result = self.wait_panel(Labels.esc_option, box=Labels.box_all_esc_options, threshold=0.3)
         if not result:
             self.log_error("can't find panel, make sure esc is the hotkey for panel", notify=True)
-            raise Exception("can't find panel, make sure esc is the hotkey for panel")
+            raise CannotFindException("can't find panel, make sure esc is the hotkey for panel")
         return result
 
     def ensure_main(self, esc=True, time_out=30):

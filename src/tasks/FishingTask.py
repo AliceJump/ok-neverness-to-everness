@@ -73,7 +73,6 @@ class FishingTask(BaseNTETask):
     def sleep_check(self):
         if self.should_check_monthly_card():
             self.handle_monthly_card()
-        return
 
     def do_run(self):
         self.reset_runtime_state()
@@ -205,8 +204,7 @@ class FishingTask(BaseNTETask):
                         return True
 
                 self.next_frame()
-            else:
-                self.log_error("控条阶段超时")
+            self.log_error("控条阶段超时")
             return False
         finally:
             self._clear_bar_key_if_hold_mode()

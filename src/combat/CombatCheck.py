@@ -418,12 +418,10 @@ class CombatCheck(BaseNTETask):
         return res
 
     def combat_detect(self, frame=None, target=True, lv=True, bg=False):
-        if target:
-            if self.openvino_detect_sync():
-                return True, "target"
-        if lv:
-            if self.find_lv(frame=frame, bg=bg):
-                return True, "lv"
+        if target and self.openvino_detect_sync():
+            return True, "target"
+        if lv and self.find_lv(frame=frame, bg=bg):
+            return True, "lv"
         return False, None
 
     def async_combat_detect(self, target=True, lv=True):

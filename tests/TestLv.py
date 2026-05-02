@@ -19,8 +19,6 @@ class TestOcrLv(TaskTestCase):
         result = self.task.find_lv()
         self.logger.info(f'enemy_lv_text: {result}')
         self.assertEqual(len(result), 2)
-        # time.sleep(1)
-        # self.task.screenshot('enemy_health', show_box=True)
 
     def test_boss_lv_text(self):
         self.set_image('tests/images/04.png')
