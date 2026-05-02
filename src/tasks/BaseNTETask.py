@@ -3,7 +3,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import Any, List, overload
+from typing import Any, Callable, List, overload
 
 import cv2
 import numpy as np
@@ -89,6 +89,27 @@ class BaseNTETask(BaseTask):
         finally:
             if is_top_level:
                 delattr(self, "_current_move")
+
+    # fmt: off
+    @overload
+    def operate_click(self, x: int | Box | List[Box] = -1, y=-1, move_back=False, name=None,
+                      interval=-1, down_time=0.02, key='left',
+                      hcenter=False, vcenter=False) -> Any:
+        ...
+    # fmt: on
+
+    def operate_click(self, *args, **kwargs):
+        kwargs["move"] = True
+        kwargs["after_sleep"] = 0
+        self.operate(lambda: self.click(*args, **kwargs), block=True)
+
+    def operate(self, func: Callable, block=False):
+        from src.interaction.NTEInteraction import NTEInteraction
+
+        if isinstance(self.executor.interaction, NTEInteraction):
+            return self.executor.interaction.operate(func, block)
+        else:
+            return func()
 
     def get_char_box(self, index: int):
         box = self.get_box_by_name(f"box_char_{index + 1}")
@@ -476,7 +497,10 @@ class BaseNTETask(BaseTask):
             travel_btn = self.find_traval_button()
         if travel_btn:
             self.sleep(0.1)
-            self.click(travel_btn, after_sleep=1, move=True, down_time=0.01)
+            self.operate(
+                lambda: self.click(travel_btn, move=True), block=True
+            )
+            self.sleep(1)
             return True
         return False
 
