@@ -515,8 +515,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "librosa", specifier = ">=0.11.0" },
-    { name = "ok-script", specifier = ">=1.0.108" },
-    { name = "onnxocr-ppocrv5", specifier = ">=0.0.15" },
+    { name = "ok-script", specifier = ">=1.0.109" },
+    { name = "onnxocr-ppocrv5", specifier = ">=0.0.17" },
     { name = "opencc", specifier = ">=1.2.0" },
     { name = "opencv-python", specifier = ">=4.13.0.92" },
     { name = "openvino", specifier = ">=2026.1.0" },
@@ -531,7 +531,7 @@ dev = [{ name = "polib", specifier = ">=1.2.0" }]
 
 [[package]]
 name = "ok-script"
-version = "1.0.108"
+version = "1.0.109"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mouse" },
@@ -544,23 +544,23 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/65/c21ff989ba65966f1fbe1b01e118248513a47e844ef37c01cd563a07c8d7/ok_script-1.0.108.tar.gz", hash = "sha256:aaa9c6adbb0e1a9411fef0ba796cb70fdba24e714f8a5757c941f1cbbd9dd8c5", size = 6058368, upload-time = "2026-04-29T03:00:29.346Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/16/f32933ddcef27c41f33f7a5168d00f69080d99fd9a868f554d279b253013/ok_script-1.0.109.tar.gz", hash = "sha256:552a459bff679a56e084d690ffa580744cbcb3d0700392787f421db82c0c1c2c", size = 6059665, upload-time = "2026-05-02T01:48:34.449Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/83/d96d4871a38b51025937226d870825777db26956df794b20057df638c42b/ok_script-1.0.108-py3-none-any.whl", hash = "sha256:d64a95161129705a835189709d17c1670a7d8b4dfc84ba339bc77f88f953885d", size = 6281341, upload-time = "2026-04-29T03:00:26.387Z" },
+    { url = "https://files.pythonhosted.org/packages/68/79/115f5915238eefe0715c4a0defddf9dd1f6b09e9faae55f8d7a04a6dc83a/ok_script-1.0.109-py3-none-any.whl", hash = "sha256:8eb81b569bdc92d9ede6a5892c3042bcaf4f3dfcf27d7e807ee155983359cf28", size = 6282801, upload-time = "2026-05-02T01:48:06.743Z" },
 ]
 
 [[package]]
 name = "onnxocr-ppocrv5"
-version = "0.0.15"
+version = "0.0.17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pillow" },
     { name = "pyclipper" },
     { name = "shapely" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bc/4a/4e12d8d49ffe08795e4fb8e7317f40174893734afef78d8a5ef21a3717c9/onnxocr_ppocrv5-0.0.15.tar.gz", hash = "sha256:d95e87bd0a5e4e3bb1ee12210481b19d868a2fbbde5fcfa637e77603390c0ab7", size = 19161206, upload-time = "2026-04-22T11:50:50.179Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/ea/9e28a5a3df08b0556794d671f3a3ee56765f073d97b48e334f7e1a4c91b8/onnxocr_ppocrv5-0.0.17.tar.gz", hash = "sha256:a6e6a97bd459e43daa1f7d4452bf3676c5137fef57a04463d7ee1bebc24a00d2", size = 19161969, upload-time = "2026-05-03T15:45:50.281Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6d/71/dd095e8d619842f4533589736a5ac6cc33d5e25c55b442f1265f6dfc0b1e/onnxocr_ppocrv5-0.0.15-py3-none-any.whl", hash = "sha256:5982d44d8ed7a948cc62b29d3c3f150eece21139dba546358be792508614a914", size = 19173584, upload-time = "2026-04-22T11:50:42.258Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/02/ba8b0e004d6bd2eb8f753c2448b6c32e78ea3868aeffa14ea9f8f6d2a3c2/onnxocr_ppocrv5-0.0.17-py3-none-any.whl", hash = "sha256:96769e591698a7638f2a35021d5559b1667d9123b1023df369f40dcb3e0f14e8", size = 19174516, upload-time = "2026-05-03T15:45:44.409Z" },
 ]
 
 [[package]]
