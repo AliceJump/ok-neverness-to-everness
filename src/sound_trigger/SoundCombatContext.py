@@ -33,9 +33,12 @@ class SoundCombatContext:
         self._listener: Optional[SoundListener] = None
         self._trigger: Optional[DodgeCounterTrigger] = None
         self._thread_pool: Optional[ThreadPoolExecutor] = None
-        self._context_lock = threading.Lock()
+        self._context_lock = threading.RLock()
         self._is_active = False
         self._config = {}
+        self._enable_sound_trigger = True
+        self._pending_task = None
+        self._pending_config = None
 
     @classmethod
     def set_busy(cls):
@@ -77,33 +80,31 @@ class SoundCombatContext:
         self,
         task,
         enable_sound_trigger: bool = True,
-        sample_path: str = "./闪避波形.wav",
-        counter_attack_sample_path: str = "./承轨反击波形.wav",
+        sample_path: str = "./assets/sounds/dodge.wav",
+        counter_attack_sample_path: str = "./assets/sounds/counter.wav",
         threshold: float = 0.13,
         counter_attack_threshold: float = 0.12,
-        thread_pool_size: int = 4,
         **kwargs,
     ):
-        if not enable_sound_trigger:
-            return
-
-        if not (0.0 <= threshold <= 1.0):
-            raise ValueError("threshold must be between 0.0 and 1.0")
-        if not (0.0 <= counter_attack_threshold <= 1.0):
-            raise ValueError("counter_attack_threshold must be between 0.0 and 1.0")
-        if thread_pool_size < 1:
-            raise ValueError("thread_pool_size must be a positive integer")
-
         with self._context_lock:
             if self._is_active:
                 return
+
+            if self._pending_config is not None:
+                enable_sound_trigger, threshold, counter_attack_threshold = self._pending_config
+
+            self._enable_sound_trigger = enable_sound_trigger
+
+            if not (0.0 <= threshold <= 1.0):
+                raise ValueError("threshold must be between 0.0 and 1.0")
+            if not (0.0 <= counter_attack_threshold <= 1.0):
+                raise ValueError("counter_attack_threshold must be between 0.0 and 1.0")
 
             self._config = {
                 "sample_path": sample_path,
                 "counter_attack_sample_path": counter_attack_sample_path,
                 "threshold": threshold,
                 "counter_attack_threshold": counter_attack_threshold,
-                "thread_pool_size": thread_pool_size,
             }
 
             self._listener = SoundListener(
@@ -114,14 +115,15 @@ class SoundCombatContext:
             )
 
             self._trigger = DodgeCounterTrigger(
-                task=task,
+                task=self._pending_task if self._pending_task is not None else task,
             )
 
             self._listener.on_dodge_triggered = self._on_dodge_triggered
             self._listener.on_counter_triggered = self._on_counter_triggered
+            self._listener.is_computation_required = self._is_computation_required
 
             self._thread_pool = ThreadPoolExecutor(
-                max_workers=thread_pool_size, thread_name_prefix="SoundCombat"
+                max_workers=2, thread_name_prefix="SoundCombat"
             )
 
             self._is_active = True
@@ -140,37 +142,30 @@ class SoundCombatContext:
             return False
 
     def exit(self):
-        if not self._is_active:
-            return
+        with self._context_lock:
+            if not self._is_active:
+                return
 
-        try:
-            if self._listener:
-                self._listener.stop()
-            logger.info("SoundCombatContext exited - listener stopped")
-        except Exception as e:
-            logger.error(f"Error exiting SoundCombatContext: {e}")
-
-    def execute_async(self, func, *args, **kwargs):
-        if self._thread_pool and self._is_active:
-            return self._thread_pool.submit(func, *args, **kwargs)
-        logger.warning("Thread pool not available, executing synchronously")
-        from concurrent.futures import Future
-
-        future = Future()
-        try:
-            result = func(*args, **kwargs)
-            future.set_result(result)
-        except Exception as e:
-            future.set_exception(e)
-        return future
+            try:
+                if self._listener:
+                    self._listener.stop()
+                    self._listener = None
+                if self._thread_pool:
+                    self._thread_pool.shutdown(wait=False, cancel_futures=True)
+                    self._thread_pool = None
+                self._trigger = None
+                self._is_active = False
+                logger.info("SoundCombatContext exited and completely cleared")
+            except Exception as e:
+                logger.error(f"Error exiting SoundCombatContext: {e}")
 
     def _on_dodge_triggered(self):
         if self._trigger is None:
             logger.info("Dodge trigger ignored - trigger is None")
             return
         task = self._trigger.task
-        if task and task.paused:
-            logger.info("Dodge trigger ignored - task is paused")
+        if task is None or task.paused:
+            logger.info("Dodge trigger ignored - task is None or paused")
             return
         logger.info("Dodge trigger callback invoked")
         if self._thread_pool is None:
@@ -188,8 +183,8 @@ class SoundCombatContext:
             logger.info("Counter trigger ignored - trigger is None")
             return
         task = self._trigger.task
-        if task and task.paused:
-            logger.info("Counter trigger ignored - task is paused")
+        if task is None or task.paused:
+            logger.info("Counter trigger ignored - task is None or paused")
             return
         logger.info("Counter trigger callback invoked")
         if self._thread_pool is None:
@@ -201,6 +196,31 @@ class SoundCombatContext:
             logger.info(f"Counter task submitted, future: {future}")
         except Exception as e:
             logger.error(f"Failed to submit counter task: {e}")
+
+    def update_task(self, task):
+        with self._context_lock:
+            self._pending_task = task
+            if self._trigger:
+                self._trigger.task = task
+
+    def update_config(self, enable: bool, dodge_threshold: float, counter_threshold: float):
+        with self._context_lock:
+            self._pending_config = (enable, dodge_threshold, counter_threshold)
+            self._enable_sound_trigger = enable
+            if self._listener:
+                self._listener.threshold = dodge_threshold
+                self._listener.counter_attack_threshold = counter_threshold
+
+    def _is_computation_required(self) -> bool:
+        if not self._enable_sound_trigger:
+            return False
+        trigger = self._trigger
+        if not trigger:
+            return False
+        task = trigger.task
+        if not task:
+            return False
+        return not task.paused
 
     @property
     def is_active(self) -> bool:
@@ -233,6 +253,8 @@ class SoundCombatContext:
             self._trigger = None
             self._is_active = False
             self._config = {}
+            self._pending_task = None
+            self._pending_config = None
             logger.info("SoundCombatContext shutdown complete")
 
     def __del__(self):

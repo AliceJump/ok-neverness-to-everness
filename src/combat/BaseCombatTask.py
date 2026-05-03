@@ -12,6 +12,7 @@ from src.char.CharFactory import get_char_by_name, get_char_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.char.Healer import Healer
 from src.combat.CombatCheck import CombatCheck
+from src.sound_trigger.SoundCombatContext import SoundCombatContext
 from src.utils import game_filters as gf
 from src.utils import image_utils as iu
 
@@ -541,6 +542,8 @@ class BaseCombatTask(CombatCheck):
 
     def combat_end(self):
         """战斗结束时调用的清理方法。"""
+        SoundCombatContext().update_task(None)
+
         current_char = self.get_current_char(raise_exception=False)
         if current_char:
             self.get_current_char().on_combat_end(self.chars)
@@ -553,10 +556,25 @@ class BaseCombatTask(CombatCheck):
             check_combat (bool, optional): 是否在休眠前检查战斗状态。默认为 True。
         """
         # self.log_debug(f'sleep_check {self._in_combat}')
+
+        if SoundCombatContext.should_interrupt_combat():
+            self.log_info("Combat sleep interrupted by sound action")
+            SoundCombatContext.wait_for_sound_action_complete(timeout=0.5)
+
         if self._in_combat:
             self.next_frame()
             if not self.in_combat():
                 self.raise_not_in_combat("sleep check not in combat")
+
+    def _apply_sound_config(self):
+        if self.sound_config:
+            enable = self.sound_config.get("Enable Sound Trigger", True)
+            dodge_thresh = self.sound_config.get("Dodge Threshold", 0.13)
+            counter_thresh = self.sound_config.get("Counter Attack Threshold", 0.12)
+            dodge_thresh = np.clip(dodge_thresh, 0.0, 1.0)
+            counter_thresh = np.clip(counter_thresh, 0.0, 1.0)
+            SoundCombatContext().update_config(enable, dodge_thresh, counter_thresh)
+        SoundCombatContext().update_task(self)
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
@@ -659,6 +677,7 @@ class BaseCombatTask(CombatCheck):
         if self.team_size > 0:
             self.combat_start = time.time()
             ret = True
+            self._apply_sound_config()
         logger.debug(f"load_chars cost {time.perf_counter() - now:.3f}s")
         return ret
 

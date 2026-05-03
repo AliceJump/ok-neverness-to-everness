@@ -35,14 +35,12 @@ sound_trigger_config_option = ConfigOption(
         "Enable Sound Trigger": True,
         "Dodge Threshold": 0.13,
         "Counter Attack Threshold": 0.12,
-        "Thread Pool Size": 4,
     },
     description="Sound-based dodge and counter trigger settings",
     config_description={
         "Enable Sound Trigger": "Enable sound recognition for automatic dodge and counter attacks",
         "Dodge Threshold": "Dodge sound recognition threshold (0.0-1.0, lower is more sensitive)",
         "Counter Attack Threshold": "Counter attack sound recognition threshold (0.0-1.0, lower is more sensitive)",
-        "Thread Pool Size": "Thread pool size for processing sound trigger operations",
     },
 )
 

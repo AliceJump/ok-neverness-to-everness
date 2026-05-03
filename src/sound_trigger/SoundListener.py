@@ -1,5 +1,14 @@
+# ============================================================================
+# This file is derived from the ZZZSoundTrigger project.
+# Original Author: ImLaoBJie
+# Repository: https://github.com/ImLaoBJie/ZZZSoundTrigger
+# License: GNU General Public License v3.0 (GPL-3.0)
+#
+# This file has been modified for integration into the ok-nte project.
+# ============================================================================
 import threading
 import time
+import warnings
 from typing import Optional
 
 import librosa
@@ -8,6 +17,8 @@ import soundcard as sc
 from ok import Logger
 from scipy.signal import butter, correlate, filtfilt
 from sklearn.preprocessing import scale
+
+warnings.filterwarnings("ignore", message="data discontinuity in recording")
 
 logger = Logger.get_logger(__name__)
 
@@ -25,8 +36,8 @@ class SoundListener:
 
     def __init__(
         self,
-        sample_path: str = "./闪避波形.wav",
-        counter_attack_sample_path: str = "./承轨反击波形.wav",
+        sample_path: str,
+        counter_attack_sample_path: str,
         threshold: float = 0.13,
         counter_attack_threshold: float = 0.12,
         expansion_ratio: float = 1.0,
@@ -39,6 +50,7 @@ class SoundListener:
         self.expansion_ratio = expansion_ratio
         self.is_allow_successive_trigger = is_allow_successive_trigger
 
+        self.is_computation_required = None
         self._running = False
         self._listener_thread: Optional[threading.Thread] = None
         self._last_trigger_time = 0.0
@@ -56,20 +68,28 @@ class SoundListener:
 
     def _load_samples(self):
         try:
-            self._sample_waveform, sample_rate = librosa.load(self.sample_path)
-            self._sample_waveform = librosa.resample(self._sample_waveform, orig_sr=sample_rate, target_sr=self.used_sr)
-
             self._b, self._a = butter(self.degree, self.cut_off, btype='highpass', output='ba', fs=self.used_sr)
-            self._sample_waveform = self._filtering(self._sample_waveform)
-
+            
+            self._sample_waveform = self._load_and_cache(self.sample_path)
             if self.counter_attack_sample_path:
-                self._counter_sample_waveform, counter_rate = librosa.load(self.counter_attack_sample_path)
-                self._counter_sample_waveform = librosa.resample(self._counter_sample_waveform, orig_sr=counter_rate, target_sr=self.used_sr)
-                self._counter_sample_waveform = self._filtering(self._counter_sample_waveform)
+                self._counter_sample_waveform = self._load_and_cache(self.counter_attack_sample_path)
 
             logger.info(f"Sound samples loaded: {self.used_sr}Hz")
         except Exception as e:
             logger.error(f"Failed to load sound samples: {e}")
+
+    def _load_and_cache(self, path: str):
+        import os
+        cache_path = f"{path}_{self.used_sr}_{self.degree}_{self.cut_off}.npy"
+        
+        if os.path.exists(cache_path) and os.path.exists(path):
+            if os.path.getmtime(cache_path) > os.path.getmtime(path):
+                return np.load(cache_path)
+                
+        waveform, _ = librosa.load(path, sr=self.used_sr)
+        waveform = self._filtering(waveform)
+        np.save(cache_path, waveform)
+        return waveform
 
     def _filtering(self, waveform):
         return filtfilt(self._b, self._a, waveform)
@@ -157,6 +177,9 @@ class SoundListener:
                                 ring_buffer[-(max_samples - buffer_pos):],
                                 ring_buffer[:buffer_pos]
                             ])
+
+                        if self.is_computation_required and not self.is_computation_required():
+                            continue
 
                         dodge_score = self.matching(window, self._sample_waveform)
                         counter_score = 0.0
