@@ -1,9 +1,12 @@
+import os.path
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
+from ok import Logger, get_path_relative_to_exe
 from PySide6.QtCore import QObject
 
-from ok import Logger
+from src.sound_trigger.SoundCombatContext import SoundCombatContext
 
 logger = Logger.get_logger(__name__)
 
@@ -15,8 +18,15 @@ class Globals(QObject):
         self.thread_pool_executor = None
         self.thread_pool_exit_event = Event()
         exit_event.bind_stop(self)
+        self._openvino_model_async = None
+        self._sound_context_stop_event = Event()
+        threading.Thread(
+            target=self.init_sound_context, daemon=True, name="SoundContextInit"
+        ).start()
 
     def stop(self):
+        self._sound_context_stop_event.set()
+        SoundCombatContext().shutdown()
         self.shutdown_thread_pool_executor()
 
     def get_thread_pool_executor(self, max_workers=6):
@@ -29,7 +39,7 @@ class Globals(QObject):
             and max_workers > self._thread_pool_executor_max_workers
         ):
             logger.info(
-                "thread pool max_workers not enough, reset max_workers" \
+                "thread pool max_workers not enough, reset max_workers"
                 f" {self._thread_pool_executor_max_workers} -> {max_workers}"
             )
             self.shutdown_thread_pool_executor()
@@ -85,3 +95,57 @@ class Globals(QObject):
             logger.debug(f"Periodic task {task.__name__} stopped.")
 
         executor.submit(loop_wrapper)
+
+    @property
+    def openvino_model_async(self):
+        if self._openvino_model_async is None:
+            logger.info("openvino_model_async Using YOLO26OpenVINOAsyncDetector")
+            from src.YOLO26OpenVINOAsyncDetector import YOLO26OpenVINOAsyncDetector
+
+            self._openvino_model_async = YOLO26OpenVINOAsyncDetector(
+                xml_path=get_path_relative_to_exe("assets", "openvino", "best.xml")
+            )
+        return self._openvino_model_async
+
+    @property
+    def openvino_latency_async(self):
+        return self._openvino_model_async.latency
+
+    def openvino_detect_async(self, image, box=None, threshold=0.5, force=False):
+        """异步检测，返回结果可能为缓存值"""
+        ret = self.openvino_model_async.detect(
+            image, box=box, threshold=threshold, label="target", force=force
+        )
+        # logger.debug(f"openvino async: {ret}, cost {self.openvino_latency_async:.3f} s")
+        return ret
+
+    def openvino_detect_sync(self, image, box=None, threshold=0.5):
+        """同步检测"""
+        ret = self.openvino_model_async.detect_sync(
+            image, box=box, threshold=threshold, label="target"
+        )
+        # logger.debug(f"openvino sync: {ret}, cost {self.openvino_latency_async:.3f} s")
+        return ret
+
+    def openvino_clear_cache(self):
+        """清空缓存"""
+        self.openvino_model_async.clear_cache()
+
+    def init_sound_context(self):
+        context = SoundCombatContext()
+        if self._sound_context_stop_event.is_set():
+            return
+        dodge = get_path_relative_to_exe("assets", "sounds", "dodge.wav")
+        counter_attack = get_path_relative_to_exe("assets", "sounds", "counter.wav")
+        context.setup(
+            task=None,
+            sample_path=dodge,
+            counter_attack_sample_path=counter_attack,
+        )
+        if self._sound_context_stop_event.is_set():
+            context.shutdown()
+            return
+        if context.enter() and not self._sound_context_stop_event.is_set():
+            logger.info("SoundCombatContext initialized globally")
+        else:
+            context.shutdown()

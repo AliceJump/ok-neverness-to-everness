@@ -33,8 +33,19 @@ All issues and consequences arising from the use of this software are not relate
 
 ## ✨ Main Features
 
-*   **Background Operation**
-    *   Supports automation while the PC game is running in the background
+<p align="center">
+  <img width="950" alt="demo_en" src="https://github.com/user-attachments/assets/30aabf6c-4b19-46b7-b835-7bcd9298f966" />
+</p>
+
+- **Background Operation**: Automate game actions while in the background.
+- **Auto Fishing**: Fully automated fishing process.
+- **Auto Combat**: Computer vision-based combat algorithm.
+- **Skip Dialog**: Rapidly skip through story dialogs.
+- **Fast Travel**: Automatic map teleportation.
+- **Character Center**
+  - **Character Management**: Supports custom combo lists.
+  - **Feature Management**: Adapts to different character skins.
+- **Audio Driven**: Auto dodge and counter based on audio feedback.
 
 ## 🖥️ System Requirements & Compatibility
 
@@ -148,3 +159,4 @@ If the solutions above do not resolve your issue, feel free to report it via [**
 *   [ok-oldking/OnnxOCR](https://github.com/ok-oldking/OnnxOCR)
 *   [zhiyiYo/PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
 *   [Toufool/AutoSplit](https://github.com/Toufool/AutoSplit)
+*   [ImLaoBJie/ZZZSoundTrigger](https://github.com/ImLaoBJie/ZZZSoundTrigger)

@@ -1,23 +1,20 @@
 import re
 import time
-from typing import TYPE_CHECKING, List
+from typing import List
 
 import cv2
 import numpy as np
-from skimage.metrics import structural_similarity as ssim
-
 from ok import Logger, safe_get
+
 from src import text_white_color
-from src.char.BaseChar import Element, Priority
+from src.char.BaseChar import BaseChar, Element, Priority
 from src.char.CharFactory import get_char_by_name, get_char_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.char.Healer import Healer
 from src.combat.CombatCheck import CombatCheck
+from src.sound_trigger.SoundCombatContext import SoundCombatContext
 from src.utils import game_filters as gf
 from src.utils import image_utils as iu
-
-if TYPE_CHECKING:
-    from src.char.BaseChar import BaseChar
 
 logger = Logger.get_logger(__name__)
 cd_regex = re.compile(r"\d{1,2}\.\d")
@@ -313,6 +310,14 @@ class BaseCombatTask(CombatCheck):
         self.combat_end()
         self.wait_in_team_and_world(time_out=10, raise_if_not_found=False)
 
+    def _get_char_log_name(self, char: "BaseChar"):
+        from src.char.custom.CustomChar import CustomChar
+
+        if type(char) in (BaseChar, CustomChar):
+            return char.char_name
+        else:
+            return char.name
+
     def _decide_switch_to(self, current_char: "BaseChar", free_intro=False, require_intro=False):
         has_intro = free_intro or current_char.is_cycle_full()
         switch_to = current_char
@@ -341,9 +346,9 @@ class BaseCombatTask(CombatCheck):
                 switch_to = char
 
         if has_intro and max_priority < Priority.FAST_SWITCH:
-            switch_to = self.find_element_ring_reaction_target(current_char)
-            if switch_to:
-                return switch_to, has_intro
+            reaction_target = self.find_element_ring_reaction_target(current_char)
+            if reaction_target:
+                return reaction_target, has_intro
 
         return switch_to, has_intro
 
@@ -386,20 +391,23 @@ class BaseCombatTask(CombatCheck):
             return
 
         switch_to.has_intro = has_intro
+        current_char_name = self._get_char_log_name(current_char)
+        switch_to_name = self._get_char_log_name(switch_to)
+
         logger.info(
-            f"switch_next_char {current_char} -> {switch_to} has_intro {switch_to.has_intro}"
+            f"switch_next_char {current_char_name} -> {switch_to_name} has_intro {switch_to.has_intro}"
         )
 
         last_click_time = 0.0
         last_decide_time = 0.0
         start_time = time.time()
-        self.has_char_slot_changed(switch_to.index, reset_char_slot=True)
+        # self.is_char_at_index(switch_to.index, reset_char_slot=True)
 
         while True:
             self.check_combat()
             current_time = time.time()
 
-            is_char_switched = self.has_char_slot_changed(switch_to.index)
+            is_char_switched = self.is_char_at_index(switch_to.index)
 
             if not is_char_switched:
                 self.click(interval=0.2)
@@ -421,13 +429,14 @@ class BaseCombatTask(CombatCheck):
                     switch_to = new_switch_to
                     has_intro = new_has_intro
                     switch_to.has_intro = True
+                    switch_to_name = self._get_char_log_name(switch_to)
                     logger.info(
-                        f"switch_next_char updated target to {switch_to} has_intro {switch_to.has_intro}"
+                        f"switch_next_char updated target to {switch_to_name} has_intro {switch_to.has_intro}"
                     )
 
             if not self.is_in_team():
                 logger.info(
-                    f"not in world while switching chars_{current_char}_to_{switch_to} {current_time - start_time}"
+                    f"not in world while switching chars_{current_char_name}_to_{switch_to_name} {current_time - start_time}"
                 )
                 # if self.debug:
                 #     self.screenshot(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
@@ -438,9 +447,9 @@ class BaseCombatTask(CombatCheck):
                 #         self.raise_not_in_combat(f'char dead', exception_type=CharDeadException)
                 if current_time - start_time > self.switch_char_time_out:
                     self.raise_not_in_combat(
-                        f"switch too long failed chars_{current_char}_to_{switch_to}, {current_time - start_time}"
+                        f"switch too long failed chars_{current_char_name}_to_{switch_to_name}, {current_time - start_time}"
                     )
-                self.next_frame()
+                self.sleep(0.01)
                 continue
 
             if current_time - last_click_time > 0.2:
@@ -450,10 +459,10 @@ class BaseCombatTask(CombatCheck):
 
             if current_time - start_time > 10:
                 if self.debug:
-                    self.screenshot(f"switch_not_detected_{current_char}_to_{switch_to}")
+                    self.screenshot(f"switch_not_detected_{current_char_name}_to_{switch_to_name}")
                 self.raise_not_in_combat("failed switch chars")
 
-            self.next_frame()
+            self.sleep(0.01)
 
         if has_intro:
             self.record_element_ring_reaction(current_char, switch_to)
@@ -533,22 +542,33 @@ class BaseCombatTask(CombatCheck):
 
     def combat_end(self):
         """战斗结束时调用的清理方法。"""
+        SoundCombatContext().update_task(None)
+
         current_char = self.get_current_char(raise_exception=False)
         if current_char:
             self.get_current_char().on_combat_end(self.chars)
 
     def sleep_check(self):
-        """休眠指定时间, 并在休眠前后检查战斗状态。
+        if SoundCombatContext.should_interrupt_combat():
+            self.log_info("Combat sleep interrupted by sound action")
+            SoundCombatContext().execute_pending_action()
+            SoundCombatContext.wait_for_resume()
 
-        Args:
-            timeout (float): 休眠的秒数。
-            check_combat (bool, optional): 是否在休眠前检查战斗状态。默认为 True。
-        """
-        # self.log_debug(f'sleep_check {self._in_combat}')
         if self._in_combat:
             self.next_frame()
             if not self.in_combat():
                 self.raise_not_in_combat("sleep check not in combat")
+
+    def _apply_sound_config(self):
+        if self.sound_config:
+            enable = self.sound_config.get("Enable Sound Trigger", True)
+            dodge_all_attacks = self.sound_config.get("Dodge All Attacks", True)
+            dodge_thresh = self.sound_config.get("Dodge Threshold", 0.13)
+            counter_thresh = self.sound_config.get("Counter Attack Threshold", 0.12)
+            dodge_thresh = np.clip(dodge_thresh, 0.0, 1.0)
+            counter_thresh = np.clip(counter_thresh, 0.0, 1.0)
+            SoundCombatContext().update_config(enable, dodge_all_attacks, dodge_thresh, counter_thresh)
+        SoundCombatContext().update_task(self)
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
@@ -612,20 +632,28 @@ class BaseCombatTask(CombatCheck):
             count = 4
         self.log_info(f"load_chars count {count} current_index {current_index}")
 
-        elements = self.load_chars_element(count)
         self.clear_element_ring_reactions()
         fixed_team = CustomCharManager().get_fixed_team()
         fixed_slots = fixed_team.get("slots", []) if fixed_team.get("enabled", False) else []
         new_chars = []
+        indices_to_detect = []
         for i in range(count):
             char = self._do_load_char(i, count, fixed_slots)
-            if char.element is Element.DEFAULT:
-                char.element = elements[i]
             new_chars.append(char)
+            if char.element is Element.DEFAULT:
+                indices_to_detect.append(i)
+
+        if indices_to_detect:
+            detected_elements = self.load_chars_element(indices_to_detect)
+            for i in indices_to_detect:
+                new_chars[i].element = detected_elements.get(i, Element.DEFAULT)
+
+        elements = [char.element for char in new_chars]
         self.chars = new_chars
+        self.info_set("char elements", elements)
 
         healer_count = 0
-        self.info_set("Chars", [])
+        self.info_set("chars", [])
         for char in self.chars:
             if char is not None:
                 char.reset_state()
@@ -638,15 +666,16 @@ class BaseCombatTask(CombatCheck):
                 self.log_info(
                     f"loaded chars success {char} {char.char_name} {char.confidence:.2f} {char.element}"
                 )
-                self.info_add_to_list("Chars", f"{char.char_name}: {char.combo_label}")
+                self.info_add_to_list("chars", f"{char.char_name}: {char.combo_label}")
 
         if self.team_size > 0:
             self.combat_start = time.time()
             ret = True
+            self._apply_sound_config()
         logger.debug(f"load_chars cost {time.perf_counter() - now:.3f}s")
         return ret
 
-    def load_chars_element(self, count=4) -> List[Element]:
+    def load_chars_element(self, indices: List[int]) -> dict:
         def preprocess_image(image):
             return iu.binarize_bgr_by_adaptive_center(image)
 
@@ -670,7 +699,7 @@ class BaseCombatTask(CombatCheck):
                 return final_img.astype(np.uint8)
             return img
 
-        results = []
+        results = {}
         target_elements = [
             Element.BLUE,
             Element.GREEN,
@@ -706,7 +735,7 @@ class BaseCombatTask(CombatCheck):
         _frame = self.frame
         # self.screenshot("load_chars_element", _frame)
 
-        for i in range(count):
+        for i in indices:
             base_scale = 8
             scale = base_scale * 1440 / self.height
             current_box = self.get_box_by_char_spacing(base_box, i)
@@ -742,7 +771,7 @@ class BaseCombatTask(CombatCheck):
 
             current_box.confidence = max_score
             current_box.name = best_element.name
-            results.append(best_element)
+            results[i] = best_element
             self.draw_boxes(boxes=current_box, color="red")
             self.log_debug(
                 f"char_{i + 1} identified as {best_element.name} (score: {max_score:.4f})"
@@ -806,29 +835,6 @@ class BaseCombatTask(CombatCheck):
         is_full = ratio > 0.9
 
         return is_full
-
-    def has_char_slot_changed(self, index: int, reset_char_slot: bool = False) -> bool:
-        def check_size(img1, img2):
-            h1, w1 = img1.shape[:2]
-            h2, w2 = img2.shape[:2]
-
-            if (h1, w1) != (h2, w2):
-                img2 = cv2.resize(img2, (w1, h1), interpolation=cv2.INTER_AREA)
-            return img1, img2
-
-        confidence = 1
-        _frame = self.frame
-        feature_name = f"char_{index + 1}_text"
-        box = self.get_box_by_name(feature_name)
-        current_mat = box.crop_frame(_frame)
-        if reset_char_slot:
-            self.chars_slot_mat[index] = None
-        if self.chars_slot_mat[index] is not None:
-            img1, img2 = check_size(self.chars_slot_mat[index], current_mat)
-            confidence = ssim(img1, img2, channel_axis=-1)
-            # self.log_debug(f"compare_char_slot: confidence {confidence}")
-        self.chars_slot_mat[index] = current_mat
-        return confidence < 0.7
 
 
 def convert_cd(text):

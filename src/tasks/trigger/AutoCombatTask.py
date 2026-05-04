@@ -1,9 +1,9 @@
 import time
 
+from ok import Logger, TriggerTask
 from PySide6.QtCore import QObject, Signal
 from qfluentwidgets import FluentIcon
 
-from ok import Logger, TriggerTask
 from src.char.CharFactory import get_char_feature_by_pos
 from src.char.custom.CustomCharManager import CustomCharManager
 from src.combat.BaseCombatTask import BaseCombatTask, CharDeadException, NotInCombatException
@@ -37,7 +37,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             }
         )
         self.config_description = {
-            "自动目标": "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字或血条时开启战斗",
+            "自动目标": "关闭时仅在中键选中敌人且画面识别到 'Lv' 文字时开启战斗",
         }
         self.op_index = 0
         self.origin_func = {}
@@ -47,7 +47,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
 
     def run(self):
         ret = False
-        if not self.scene.in_team(self.is_in_team):
+        if not self.scene.is_in_team(self.is_in_team):
             return
 
         combat_start = time.time()

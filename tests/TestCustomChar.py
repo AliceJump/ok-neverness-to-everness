@@ -117,8 +117,8 @@ class TestCustomChar(TaskTestCase):
         self.assertEqual(self.manager.get_combo("combo_test"), "")
 
         # 模擬截圖特徵值的加入
-        np.random.seed(42)
-        fake_mat = np.random.randint(0, 256, (10, 10, 3), dtype=np.uint8)
+        rng = np.random.default_rng(seed=42)
+        fake_mat = rng.integers(0, 256, (10, 10, 3), dtype=np.uint8)
         fid = self.manager.add_feature_to_character("char1", fake_mat, self.task.width, self.task.height)
         char_info_features = self.manager.get_character_info("char1")
         assert char_info_features is not None

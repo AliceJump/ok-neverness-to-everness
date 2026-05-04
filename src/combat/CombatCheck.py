@@ -1,11 +1,12 @@
-import re
+import threading
 import time
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from functools import cache
+from typing import TYPE_CHECKING, Optional
 
 import cv2
-import numpy as np
-
 from ok import Box, Logger, find_color_rectangles
+
 from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask
 from src.utils import game_filters as gf
@@ -17,13 +18,21 @@ if TYPE_CHECKING:
 logger = Logger.get_logger(__name__)
 
 
+@dataclass
+class CombatSettle:
+    time: Optional[float] = None
+    force: bool = False
+
+
 class CombatCheck(BaseNTETask):
+    TARGET_MATCH_SCALES = (0.6, 0.7, 0.8, 0.9, 1.0)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._in_ultimate = False
         self._in_combat = False
         self.skip_combat_check = False
-        self.sleep_check_interval = 0.4
+        self.sleep_check_interval = 0.2
         self.last_out_of_combat_time = 0
         self.out_of_combat_reason = ""
         self.target_enemy_time_out = 3
@@ -31,7 +40,12 @@ class CombatCheck(BaseNTETask):
         self.combat_end_condition = None
         self.target_enemy_error_notified = False
         self.cds = {}
-        self.combat_detect_future = None
+        self.find_lv_future = None
+        self._lv_async = None
+        self._combat_settle = CombatSettle()
+        self._target_template_cache_key = None
+        self._target_match_templates = None
+        self._bg_ocr_lock = threading.Lock()
 
     @property
     def in_ultimate(self):
@@ -54,6 +68,10 @@ class CombatCheck(BaseNTETask):
     def do_reset_to_false(self):
         self.cds = {}
         self._in_combat = False
+        self._combat_settle = CombatSettle()
+        self.find_lv_future = None
+        self._lv_async = None
+        self.openvino_clear_cache()
         self.scene.set_not_in_combat()
         return False
 
@@ -82,134 +100,173 @@ class CombatCheck(BaseNTETask):
         is_boss = self.find_one(Labels.boss_lv_text, box=box, frame_processor=filter)
         return bool(is_boss)
 
-    def target_enemy(self, wait=True):
+    def target_enemy(self, wait=True, lv=True):
         if not wait:
             self.middle_click()
         else:
-            if self.has_target():
-                return True
-            else:
-                logger.info(f"target lost try retarget {self.target_enemy_time_out}")
-                start = time.time()
-                while time.time() - start < self.target_enemy_time_out:
-                    self.middle_click(interval=0.2)
-                    if self.combat_detect()[0] is True:
-                        return True
-                    self.next_frame()
+            logger.info(f"targeting enemy for {self.target_enemy_time_out}s")
+            deadline = time.time() + self.target_enemy_time_out
+            while time.time() < deadline:
+                self.middle_click()
+                self.sleep(0.25)
+                if self.combat_detect(lv=lv):
+                    return True
+                self.next_frame()
 
-    def has_target(self, frame=None):
-        # now = time.perf_counter()
-        ret = self.find_target(frame=frame)
-        # logger.debug(f"has_target cost {time.perf_counter() - now:.3f}")
-        return ret
+    # def has_target(self, frame=None):
+    #     # now = time.perf_counter()
+    #     ret = self.find_target(frame=frame)
+    #     # logger.debug(f"has_target cost {time.perf_counter() - now:.3f}")
+    #     return ret
 
-    def find_target(self, frame=None):
-        def filter(image):
-            return iu.binarize_bgr_by_brightness(image, threshold=245)
+    # def _get_target_match_templates(self, template_bgr):
+    #     cache_key = (id(template_bgr), template_bgr.shape)
+    #     if self._target_template_cache_key == cache_key and self._target_match_templates:
+    #         return self._target_match_templates
 
-        if frame is None:
-            frame = self.frame
+    #     tpl_gray = cv2.cvtColor(template_bgr, cv2.COLOR_BGR2GRAY)
+    #     tpl_edge = cv2.Canny(tpl_gray, 50, 150)
 
-        # 1. 提前 Crop，裁减检索区域面积，直接在 ROI 操作
-        box = self.box_of_screen(0.2, 0.2, 0.8, 0.8)
-        roi = box.crop_frame(frame)
-        self.draw_boxes("find_target", box, color="blue")
+    #     match_templates = []
+    #     for scale in self.TARGET_MATCH_SCALES:
+    #         tw = int(template_bgr.shape[1] * scale)
+    #         th = int(template_bgr.shape[0] * scale)
+    #         if tw < 12 or th < 12:
+    #             continue
+    #         match_templates.append(
+    #             {
+    #                 "w": tw,
+    #                 "h": th,
+    #                 "bgr": cv2.resize(template_bgr, (tw, th)),
+    #                 "edge": cv2.resize(tpl_edge, (tw, th)),
+    #             }
+    #         )
 
-        # 2. 获取纯白核心并前置判断
-        pure_white_mask = cv2.inRange(roi, (255, 255, 255), (255, 255, 255))
-        if cv2.countNonZero(pure_white_mask) == 0:
-            return False
+    #     self._target_template_cache_key = cache_key
+    #     self._target_match_templates = match_templates
+    #     return match_templates
 
-        # 3. 对 ROI 进行二值化，直接转换为单通道灰度图
-        roi_bin = filter(roi)
-        roi_gray = cv2.cvtColor(roi_bin, cv2.COLOR_BGR2GRAY)
+    # def _score_target_candidate(self, roi_bin, roi_shape, tx, ty, tw, th, score_base):
+    #     crop_bin = roi_bin[ty : ty + th, tx : tx + tw]
+    #     white_count = cv2.countNonZero(crop_bin)
+    #     if white_count < 5:
+    #         return None
 
-        pw_num_labels, pw_labels, pw_stats, _ = cv2.connectedComponentsWithStats(
-            pure_white_mask, connectivity=8
-        )
+    #     h_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 1))) / white_count
+    #     v_sym = cv2.countNonZero(cv2.bitwise_and(crop_bin, cv2.flip(crop_bin, 0))) / white_count
+    #     sym_score = (h_sym + v_sym) / 2
 
-        for scale in np.arange(1, 0.2, -0.3):
-            template = self.resize_target(scale)
-            th, tw = template.shape[:2]
-            template_area = th * tw
+    #     pad = 5
+    #     if (
+    #         ty >= pad
+    #         and tx >= pad
+    #         and ty + th + pad < roi_shape[0]
+    #         and tx + tw + pad < roi_shape[1]
+    #     ):
+    #         outer_bin = roi_bin[ty - pad : ty + th + pad, tx - pad : tx + tw + pad]
+    #         outer_white = cv2.countNonZero(outer_bin)
+    #         iso_score = white_count / outer_white if outer_white > 0 else 0
+    #     else:
+    #         iso_score = 0.7
 
-            # 模板转换为单通道灰度图，保证 matchTemplate 工作在 1 channel 提升3倍速度
-            template_gray = (
-                cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if len(template.shape) == 3 else template
-            )
+    #     score = (score_base * 2 + sym_score * 2 + iso_score) / 5
+    #     return {
+    #         "tx": tx,
+    #         "ty": ty,
+    #         "w": tw,
+    #         "h": th,
+    #         "confidence": score,
+    #         "sym_score": sym_score,
+    #         "iso_score": iso_score,
+    #     }
 
-            for i in range(1, pw_num_labels):
-                pw_w = pw_stats[i, cv2.CC_STAT_WIDTH]
-                pw_h = pw_stats[i, cv2.CC_STAT_HEIGHT]
-                pw_area = pw_w * pw_h
-                if pw_area > template_area:
-                    continue
+    # def find_target(self, frame=None):
+    #     if frame is None:
+    #         frame = self.frame
+    #     # 1. 提前 Crop
+    #     box = self.box_of_screen(0.2, 0.2, 0.8, 0.6715)
+    #     roi = box.crop_frame(frame)
+    #     self.draw_boxes("find_target", box, color="blue")
 
-                pw_x = pw_stats[i, cv2.CC_STAT_LEFT]
-                pw_y = pw_stats[i, cv2.CC_STAT_TOP]
-                cx = pw_x + pw_w // 2
-                cy = pw_y + pw_h // 2
+    #     # 2. 还原世界亮度 (确保彩色特征在滤镜下依然可用)
+    #     roi = iu.restore_world_brightness(roi)
 
-                # 设定一个小框(长宽为原目标的 ~2倍)，给予哪怕位移造成的冗余也足够匹配
-                pad_x = int(tw * 1.0)
-                pad_y = int(th * 1.0)
+    #     # 3. 准备彩色模板
+    #     target_feature = self.get_feature_by_name(Labels.target)
+    #     if target_feature is None:
+    #         return None
+    #     template_bgr = target_feature.mat
+    #     match_templates = self._get_target_match_templates(template_bgr)
 
-                y1 = max(0, cy - pad_y)
-                y2 = min(roi_gray.shape[0], cy + pad_y)
-                x1 = max(0, cx - pad_x)
-                x2 = min(roi_gray.shape[1], cx + pad_x)
+    #     # 4. 预处理：边缘图与二值图 (用于处理内核/空心图标并过滤杂讯)
+    #     roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    #     _, roi_bin = cv2.threshold(roi_gray, 180, 255, cv2.THRESH_BINARY)
+    #     roi_edge = None
 
-                # 切割出微型区域 (例如 100x100 像素量级)
-                crop = roi_gray[y1:y2, x1:x2].copy()
+    #     best_res = None
 
-                # 如果切割的区域因为在边缘而导致依然小于模板范围，则跳过
-                if crop.shape[0] < th or crop.shape[1] < tw:
-                    continue
+    #     # 5. 多尺度搜索
+    #     for tpl in match_templates:
+    #         tw = tpl["w"]
+    #         th = tpl["h"]
+    #         # 模式 A: 彩色匹配 (针对完整图标，置信度高)
+    #         res_c = cv2.matchTemplate(roi, tpl["bgr"], cv2.TM_CCOEFF_NORMED)
+    #         _, max_val_c, _, max_loc_c = cv2.minMaxLoc(res_c)
 
-                # 在这几百像素的极小图上运算连通域，开销为 0
-                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-                    crop, connectivity=8
-                )
-                for j in range(1, num_labels):
-                    if (
-                        stats[j, cv2.CC_STAT_WIDTH] * stats[j, cv2.CC_STAT_HEIGHT]
-                        > template_area * 1.2
-                    ):
-                        crop[labels == j] = 0
+    #         # 挑选候选者
+    #         if max_val_c > 0.6:
+    #             tx, ty, score_base = max_loc_c[0], max_loc_c[1], max_val_c
+    #         else:
+    #             # 模式 B: 边缘匹配 (针对空心/只有内核的图标)
+    #             if roi_edge is None:
+    #                 roi_edge = cv2.Canny(roi_gray, 50, 150)
+    #             res_e = cv2.matchTemplate(roi_edge, tpl["edge"], cv2.TM_CCOEFF_NORMED)
+    #             _, max_val_e, _, max_loc_e = cv2.minMaxLoc(res_e)
+    #             if max_val_e <= 0.5:
+    #                 continue
+    #             # 边缘匹配作为兜底，门槛稍低，但后续对称性校验会更严
+    #             tx, ty, score_base = max_loc_e[0], max_loc_e[1], max_val_e
 
-                # 原图单通道、模板单通道
-                res = cv2.matchTemplate(crop, template_gray, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, max_loc = cv2.minMaxLoc(res)
+    #         # 6. 二次校验：几何特征
+    #         candidate = self._score_target_candidate(roi_bin, roi.shape, tx, ty, tw, th, score_base)
+    #         if candidate is None:
+    #             continue
 
-                if max_val > 0.6:
-                    center_x = box.x + x1 + max_loc[0] + tw // 2
-                    center_y = box.y + y1 + max_loc[1] + th // 2
+    #         if candidate["confidence"] > 0.6:
+    #             if best_res is None or candidate["confidence"] > best_res["confidence"]:
+    #                 best_res = {
+    #                     "x": box.x + tx + tw // 2,
+    #                     "y": box.y + ty + th // 2,
+    #                     "w": tw,
+    #                     "h": th,
+    #                     "confidence": candidate["confidence"],
+    #                 }
 
-                    result_box = Box(
-                        center_x - tw // 2,
-                        center_y - th // 2,
-                        width=tw,
-                        height=th,
-                        confidence=max_val,
-                    )
-                    self.draw_boxes("target", result_box, color="red")
+    #     if best_res:
+    #         result_box = Box(
+    #             best_res["x"] - best_res["w"] // 2,
+    #             best_res["y"] - best_res["h"] // 2,
+    #             width=best_res["w"],
+    #             height=best_res["h"],
+    #             confidence=best_res["confidence"],
+    #         )
+    #         self.draw_boxes("target", result_box, color="red")
+    #         return result_box
 
-                    return result_box
+    #     return False
 
-        return False
-
-    def resize_target(self, scale=1):
-        template = self.get_feature_by_name(Labels.target).mat
-        if scale == 1:
-            return template
-        h, w = template.shape[:2]
-        template = cv2.resize(
-            template, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_NEAREST
-        )
-        return template
+    # def resize_target(self, scale=1):
+    #     template = self.get_feature_by_name(Labels.target).mat
+    #     if scale == 1:
+    #         return template
+    #     h, w = template.shape[:2]
+    #     template = cv2.resize(
+    #         template, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_NEAREST
+    #     )
+    #     return template
 
     def has_health_bar(self):
-        if self._find_red_health_bar() or self._find_boss_health_bar():
+        if self._find_red_health_bar():  # or self._find_boss_health_bar():
             return True
         return False
 
@@ -219,8 +276,8 @@ class CombatCheck(BaseNTETask):
         max_height = min_height * 2.5
         max_width = self.width_of_screen(200 / 2560)
 
+        # 还原原始的颜色过滤
         _frame = iu.filter_by_hsv(self.frame, enemy_health_hsv)
-
         boxes = find_color_rectangles(
             _frame,
             enemy_health_color_red,
@@ -284,70 +341,331 @@ class CombatCheck(BaseNTETask):
             #     return self.scene.set_in_combat()
             if self.combat_end_condition is not None and self.combat_end_condition():
                 return self.reset_to_false(reason="end condition reached")
-            combat_detect = self.async_combat_detect()
-            if combat_detect is None or combat_detect is True:
+
+            if self._combat_settle.time is not None:
+                combat_detect = self.async_combat_detect(
+                    exhaustive=True, force=self._combat_settle.force
+                )
+                self._combat_settle.force = False
+            else:
+                combat_detect = self.async_combat_detect()
+
+            if combat_detect is None:
                 return self.scene.set_in_combat()
+            elif combat_detect is True:
+                self._combat_settle = CombatSettle()
+                return self.scene.set_in_combat()
+            else:
+                if self._combat_settle.time is None:
+                    self._combat_settle.time = time.time() + 0.5
+                if self._combat_settle.time > time.time():
+                    if self.middle_click(interval=0.4):
+
+                        def delay_detect():
+                            time.sleep(0.25)
+                            self._combat_settle.force = True
+
+                        self.thread_pool_executor.submit(delay_detect)
+                    return self.scene.set_in_combat()
+
             if self.target_enemy(wait=True):
+                self._combat_settle = CombatSettle()
+                self.find_lv_future = None
+                self._lv_async = None
+                self.openvino_clear_cache()
                 logger.debug("retarget enemy succeeded")
                 return self.scene.set_in_combat()
-            # if self.should_check_monthly_card() and self.handle_monthly_card():
-            #     return self.scene.set_in_combat()
+            if self.should_check_monthly_card() and self.handle_monthly_card():
+                return self.scene.set_in_combat()
             logger.error("target_enemy failed, try recheck break out of combat")
             return self.reset_to_false(reason="target enemy failed")
         else:
             from src.tasks.trigger.AutoCombatTask import AutoCombatTask
 
-            has_target = self.async_combat_detect(target=True, lv=False)
-            if not has_target and target:
+            @cache
+            def has_target():
+                return self.openvino_detect_async()
+
+            # now = time.time()
+            is_boss = self.is_boss()
+            has_lv = bool(self.find_lv())
+            is_auto = self.config.get("自动目标") or not isinstance(self, AutoCombatTask)
+            if target and not has_target():
                 self.log_debug("try target")
                 self.middle_click(after_sleep=0.1)
-            has_health_bar = self.check_health_bar()
-            is_auto = self.config.get("自动目标") or not isinstance(self, AutoCombatTask)
 
-            in_combat = has_health_bar and (is_auto or has_target)
-            if not in_combat and has_target:
-                in_combat = self.ocr(
-                    box=self.main_viewport,
-                    frame_processor=gf.isolate_lv_to_black,
-                    match=re.compile(r"lv", re.IGNORECASE),
-                    target_height=720,
-                )
+            in_combat = (is_boss or has_lv) and (is_auto or has_target())
             if in_combat:
-                if not has_target and not self.target_enemy(wait=True):
+                # self.log_info(f"enter combat cost1 {time.time() - now}")
+                if is_boss:
+                    self.middle_click()
+                elif not has_target() and not self.target_enemy(wait=True, lv=False):
                     return False
-                self.log_info("enter combat")
+                # self.log_info(f"enter combat cost2 {time.time() - now}")
                 self._in_combat = self.load_chars()
                 return self._in_combat
 
+    # def find_lv(self, frame=None, bg=False):
+    #     # now = time.time()
+    #     if frame is None:
+    #         frame = self.frame
+
+    #     viewport = self.main_viewport
+    #     # 1. 先裁剪局部区域再处理，大幅降低 CPU 负载 (避免全屏色彩过滤和连通域计算)
+    #     roi = viewport.crop_frame(frame)
+    #     roi = gf.isolate_lv_to_black(roi)
+
+    #     # 计算基于 2K (2560x1440) 分辨率的目标矩形面积
+    #     scale = self.width / 2560.0
+    #     # 使用范围型体积过滤：从单个小字符到完整的 Lv+数字 区域
+    #     min_area = (15 * scale) * (15 * scale) * 0.8
+    #     max_area = (20 * scale) * (20 * scale) * 1.2
+
+    #     # 转换为二值图并取反（使文字区域为白色 255，背景为黑色 0）
+    #     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    #     binary = cv2.bitwise_not(gray)
+
+    #     # 连通域分析
+    #     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary)
+
+    #     # 过滤：只保留矩形范围面积在 [min_area, max_area] 之间的部分
+    #     new_binary = np.zeros_like(binary)
+    #     for i in range(1, num_labels):
+    #         w = stats[i, cv2.CC_STAT_WIDTH]
+    #         h = stats[i, cv2.CC_STAT_HEIGHT]
+    #         # 这里使用矩形框面积 (w * h) 进行过滤
+    #         if min_area <= (w * h) <= max_area:
+    #             new_binary[labels == i] = 255
+
+    #     # 还原回 BGR 格式：文字为黑 (0)，背景为白 (255)
+    #     processed_roi = cv2.cvtColor(cv2.bitwise_not(new_binary), cv2.COLOR_GRAY2BGR)
+
+    #     # 2. 贴回纯白全屏底图，以完美兼容 self.ocr 的 Box 裁剪和坐标偏移逻辑
+    #     full_frame = np.full_like(frame, 255)
+    #     full_frame[
+    #         viewport.y : viewport.y + viewport.height, viewport.x : viewport.x + viewport.width
+    #     ] = processed_roi
+
+    #     if bg:
+    #         lib = "bg_onnx_ocr"
+    #         with self._bg_ocr_lock:
+    #             res = self.ocr(
+    #                 frame=full_frame,
+    #                 box=viewport,
+    #                 match=re.compile(r"lv", re.IGNORECASE),
+    #                 lib=lib,
+    #             )
+    #     else:
+    #         lib = "default"
+    #         res = self.ocr(
+    #             frame=full_frame,
+    #             box=viewport,
+    #             match=re.compile(r"lv", re.IGNORECASE),
+    #             lib=lib,
+    #         )
+
+    #     # self.log_debug(f"find_lv time: {time.time() - now}")
+    #     return res
+
     def combat_detect(self, frame=None, target=True, lv=True):
+        if lv and self.find_lv(frame=frame):
+            return True
+        if target and self.openvino_detect_sync():
+            return True
+        return False
+
+    def find_lv_async(self, frame=None, force=False):
+        ret = self._lv_async
+        if force or self.find_lv_future is None:
+            if self.find_lv_future is not None:
+                self.find_lv_future.cancel()
+            if frame is None:
+                frame = self.frame
+            self.find_lv_future = self.thread_pool_executor.submit(self.find_lv, frame=frame)
+
+            def callback(f):
+                if self.find_lv_future is not f:
+                    return
+                try:
+                    self._lv_async = bool(f.result())
+                except Exception:
+                    self._lv_async = None
+
+                if self.find_lv_future is f:
+                    self.find_lv_future = None
+
+            self.find_lv_future.add_done_callback(callback)
+        return ret
+
+    def async_combat_detect(self, target=True, lv=True, exhaustive=False, force=False):
+        lv_ret = None
+        target_ret = None
+        frame = self.frame
+
+        if lv:
+            lv_ret = self.find_lv_async(frame=frame, force=force)
+            if lv_ret:
+                return True
+
+        is_lv_false = not lv or lv_ret is False
+
+        if target and (exhaustive or is_lv_false):
+            target_ret = self.openvino_detect_async(frame=frame, force=force)
+            if target_ret:
+                return True
+
+        if lv_ret is None and target_ret is None:
+            return None
+
+        return False
+
+    def find_lv(self, frame=None, threshold=0.7):
+        if not self._init_lv_templates():
+            return []
+
         if frame is None:
             frame = self.frame
-        if target and self.has_target(frame=frame):
-            return True, "target"
-        if lv and self.ocr(
-            frame=frame,
-            box=self.main_viewport,
-            frame_processor=gf.isolate_lv_to_black,
-            match=re.compile(r"lv", re.IGNORECASE),
-            target_height=720,
-            lib="bg_onnx_ocr",
-        ):
-            return True, "lv"
-        return False, None
 
-    def async_combat_detect(self, target=True, lv=True):
-        if self.combat_detect_future and self.combat_detect_future.done():
-            ret, reason = self.combat_detect_future.result()
-            self.combat_detect_future = None
-            self.logger.info(f"combat_detect_future result: {ret}, reason: {reason}")
-            return ret
-        if self.combat_detect_future is None:
-            self.logger.info("combat_detect_future submit")
-            frame = self.frame
-            self.combat_detect_future = self.thread_pool_executor.submit(
-                self.combat_detect, frame=frame, target=target, lv=lv
-            )
-        return None
+        viewport = self.main_viewport
+        self.draw_boxes(boxes=viewport, color="blue")
+        roi = viewport.crop_frame(frame)
+        binary = gf.isolate_lv_to_white(roi)
+
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        scale = self.width / 2560.0
+        min_area = (15 * scale) ** 2 * 0.8
+        max_area = (20 * scale) ** 2 * 1.5
+
+        L_candidates = []
+        v_candidates = []
+
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            area_bbox = w * h
+
+            if not (min_area <= area_bbox <= max_area):
+                continue
+
+            # 提取实时特征
+            solidity, cx, cy = self._extract_shape_fingerprint(cnt, x, y, w, h)
+            aspect_ratio = w / float(h)
+
+            # 匹配 L
+            if (
+                abs(solidity - self._lv_feat_L[0]) < 0.15
+                and abs(cx - self._lv_feat_L[1]) < 0.15
+                and abs(cy - self._lv_feat_L[2]) < 0.15
+            ):
+                L_dist_threshold = 3.0
+                dist = cv2.matchShapes(self._lv_cnt_L, cnt, cv2.CONTOURS_MATCH_I3, 0)
+                if (
+                    self._lv_aspect_L * 0.6 < aspect_ratio < self._lv_aspect_L * 1.5
+                ) and dist < L_dist_threshold:
+                    L_candidates.append(
+                        {"x": x, "y": y, "w": w, "h": h, "score": 1 - (dist / L_dist_threshold)}
+                    )
+
+            # 匹配 v
+            elif (
+                abs(solidity - self._lv_feat_v[0]) < 0.15
+                and abs(cx - self._lv_feat_v[1]) < 0.15
+                and abs(cy - self._lv_feat_v[2]) < 0.15
+            ):
+                v_dist_threshold = 1.0
+                dist = cv2.matchShapes(self._lv_cnt_v, cnt, cv2.CONTOURS_MATCH_I3, 0)
+                if (
+                    self._lv_aspect_v * 0.6 < aspect_ratio < self._lv_aspect_v * 1.5
+                ) and dist < v_dist_threshold:
+                    v_candidates.append(
+                        {"x": x, "y": y, "w": w, "h": h, "score": 1 - (dist / v_dist_threshold)}
+                    )
+
+        results: list[Box] = []
+        for L in L_candidates:
+            best_v = None
+            min_gap = float("inf")
+
+            for v in v_candidates:
+                gap = v["x"] - (L["x"] + L["w"])
+                y_diff = abs(v["y"] - L["y"])
+
+                # 逻辑核心：v 在 L 的右侧，距离合理，且 Y 轴大致平齐
+                if -(L["w"] * 0.5) <= gap <= (L["h"] * 1.5) and y_diff <= (L["h"] * 0.5):
+                    if gap < min_gap:
+                        min_gap = gap
+                        best_v = v
+
+            if best_v:
+                conf = float((L["score"] + best_v["score"]) / 2.0)
+                if conf < threshold:
+                    continue
+                box_x = L["x"]
+                box_y = min(L["y"], best_v["y"])
+                box_w = (best_v["x"] + best_v["w"]) - L["x"]
+                box_h = max(L["y"] + L["h"], best_v["y"] + best_v["h"]) - box_y
+
+                results.append(
+                    Box(
+                        x=int(viewport.x + box_x),
+                        y=int(viewport.y + box_y),
+                        width=int(box_w),
+                        height=int(box_h),
+                        confidence=conf,
+                        name="lv",
+                    )
+                )
+        if results:
+            self.draw_boxes(Labels.lv, results, color="red")
+        return results
+
+    def _extract_shape_fingerprint(self, cnt, x, y, w, h):
+        """提取形状的物理指纹：填充率和相对重心位置"""
+        m = cv2.moments(cnt)
+        if m["m00"] == 0:
+            return 0.0, 0.5, 0.5
+        solidity = cv2.contourArea(cnt) / float(w * h)
+        cx = (m["m10"] / m["m00"] - x) / float(w)
+        cy = (m["m01"] / m["m00"] - y) / float(h)
+        return solidity, cx, cy
+
+    def _init_lv_templates(self):
+        """初始化 LV 识别所需的模板特征数据"""
+        # 如果已经初始化且分辨率没变，直接返回
+        if hasattr(self, "_lv_feat_L") and getattr(self, "_lv_tpl_res", None) == (
+            self.width,
+            self.height,
+        ):
+            return True
+
+        tpl_img = self.get_feature_by_name(Labels.lv).mat
+        tpl_bin = gf.isolate_lv_to_white(tpl_img)
+
+        contours, _ = cv2.findContours(tpl_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        valid_cnts = [
+            c for c in contours if cv2.boundingRect(c)[2] > 2 and cv2.boundingRect(c)[3] > 2
+        ]
+        valid_cnts.sort(key=lambda c: cv2.boundingRect(c)[0])
+
+        if len(valid_cnts) < 2:
+            self.log_error(f"[LV-Init] 模板切割失败，仅找到 {len(valid_cnts)} 个轮廓")
+            return False
+
+        # 提取 L 和 v 的标准指纹
+        self._lv_tpl_res = (self.width, self.height)
+        self._lv_cnt_L = valid_cnts[0]
+        self._lv_cnt_v = valid_cnts[1]
+
+        xl, yl, wl, hl = cv2.boundingRect(self._lv_cnt_L)
+        self._lv_aspect_L = wl / float(hl)
+        self._lv_feat_L = self._extract_shape_fingerprint(self._lv_cnt_L, xl, yl, wl, hl)
+
+        xv, yv, wv, hv = cv2.boundingRect(self._lv_cnt_v)
+        self._lv_aspect_v = wv / float(hv)
+        self._lv_feat_v = self._extract_shape_fingerprint(self._lv_cnt_v, xv, yv, wv, hv)
+
+        self.log_info("[LV-Init] 模板特征初始化完成")
+        return True
 
 
 enemy_health_hsv = iu.HSVRange((0, 190, 175), (10, 255, 255))
