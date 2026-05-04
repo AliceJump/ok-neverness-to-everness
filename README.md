@@ -43,7 +43,7 @@ All issues and consequences arising from the use of this software are not relate
 ## ✨ 主要功能
 
 <p align="center">
-  <img src="assets/demo_cn.gif" width="950" alt="demo">
+  <img width="950" alt="demo_cn" src="https://github.com/user-attachments/assets/6d14e11d-c7c6-42bd-8ce9-f974fd0950df" />
 </p>
 
 - **后台运行**：支持 PC 游戏在后台运行时进行自动化操作。
