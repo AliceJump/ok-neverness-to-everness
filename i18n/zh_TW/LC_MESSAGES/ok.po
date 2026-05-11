@@ -400,3 +400,132 @@ msgstr "閃避所有攻擊"
 
 msgid "Dodge all attacks without performing counter attacks"
 msgstr "閃避所有攻擊，不執行反擊"
+
+msgid "不支持从OK启动游戏"
+msgstr "不支援從 OK 啟動遊戲"
+
+msgid "任务完成后自动切换至下一个项目"
+msgstr "任務完成後自動切換至下一個項目"
+
+msgid "任务类型"
+msgstr "任務類型"
+
+msgid "具体奖励目标"
+msgstr "具體獎勵目標"
+
+msgid "异能升级材料"
+msgstr "異能升級材料"
+
+msgid "异能材料序号"
+msgstr "異能材料序號"
+
+msgid "异象界域"
+msgstr "異象界域"
+
+msgid "弧盘材料序号"
+msgstr "弧盤材料序號"
+
+msgid "弧盘突破材料"
+msgstr "弧盤突破材料"
+
+msgid "弧盘经验"
+msgstr "弧盤經驗"
+
+msgid "甲硬币"
+msgstr "甲硬幣"
+
+msgid "空幕"
+msgstr "空幕"
+
+msgid "空幕序号"
+msgstr "空幕序號"
+
+msgid "经验与甲硬币"
+msgstr "經驗與甲硬幣"
+
+msgid "自动循环项目"
+msgstr "自動循環項目"
+
+msgid "自动进行异象界域任务"
+msgstr "自動進行異象界域任務"
+
+msgid "角色经验"
+msgstr "角色經驗"
+
+msgid "选择经验与甲硬币任务的具体奖励目标"
+msgstr "選擇經驗與甲硬幣任務的具體獎勵目標"
+
+msgid "选择要进行的任务类型"
+msgstr "選擇要進行的任務類型"
+
+msgid "选择列表中的第几个项目 ({}-{})"
+msgstr "選擇列表中的第幾個項目 ({}-{})"
+
+msgid "使用滚轮加速拾取"
+msgstr "使用滾輪加速拾取"
+
+msgid "切换角色快速奔跑"
+msgstr "切換角色快速奔跑"
+
+msgid "切换角色数量"
+msgstr "切換角色數量"
+
+msgid "快速奔跑角色数量"
+msgstr "快速奔跑角色數量"
+
+msgid "按住Shift生效"
+msgstr "按住 Shift 生效"
+
+msgid "粉爪大劫案"
+msgstr "粉爪大劫案"
+
+msgid "粉爪大劫案便利性功能"
+msgstr "粉爪大劫案便利性功能"
+
+msgid "触发按键"
+msgstr "觸發按鍵"
+
+msgid "触发连点将同步生效"
+msgstr "觸發連點將同步生效"
+
+msgid "触发连点的按键 (按住生效)"
+msgstr "觸發連點的按鍵，按住該鍵生效"
+
+msgid "自动补饵卖鱼"
+msgstr "自動補餌賣魚"
+
+msgid "首次抛竿失败时，补充默认鱼饵并出售鱼获"
+msgstr "首次拋竿失敗時，補充默認魚餌並出售魚獲"
+
+msgid "4列对应的键盘按键"
+msgstr "4列對應的鍵盤按鍵"
+
+msgid "单曲超时时间(秒)"
+msgstr "單曲超時時間(秒)"
+
+msgid "异环鼓组音游自动打击与重试"
+msgstr "異環鼓組音遊自動打擊與重試"
+
+msgid "打歌次数, 0=无限循环"
+msgstr "打歌次數, 0=無限循環"
+
+msgid "自动音游"
+msgstr "自動音遊"
+
+msgid "调试日志"
+msgstr "調試日誌"
+
+msgid "超时秒数"
+msgstr "超時秒數"
+
+msgid "输出调试日志"
+msgstr "輸出調試日誌"
+
+msgid "键位"
+msgstr "鍵位"
+
+msgid "Start Game"
+msgstr "啟動遊戲"
+
+msgid "Launcher Path"
+msgstr "啟動器路徑"

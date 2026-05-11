@@ -89,6 +89,36 @@
             "file_name": "images/0.png",
             "width": 2560,
             "height": 1440
+        },
+        {
+            "id": 16,
+            "file_name": "images/0.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 17,
+            "file_name": "images/0.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 18,
+            "file_name": "images/1.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 19,
+            "file_name": "images/0.png",
+            "width": 2560,
+            "height": 1440
+        },
+        {
+            "id": 20,
+            "file_name": "images/3.png",
+            "width": 1920,
+            "height": 1080
         }
     ],
     "annotations": [
@@ -585,6 +615,71 @@
             ],
             "area": 1008,
             "iscrowd": 0
+        },
+        {
+            "id": 39,
+            "image_id": 16,
+            "category_id": 39,
+            "bbox": [
+                890,
+                652,
+                47,
+                47
+            ],
+            "area": 2209,
+            "iscrowd": 0
+        },
+        {
+            "id": 40,
+            "image_id": 17,
+            "category_id": 40,
+            "bbox": [
+                706,
+                902,
+                68,
+                66
+            ],
+            "area": 4488,
+            "iscrowd": 0
+        },
+        {
+            "id": 41,
+            "image_id": 18,
+            "category_id": 41,
+            "bbox": [
+                2071,
+                1195,
+                67,
+                71
+            ],
+            "area": 4757,
+            "iscrowd": 0
+        },
+        {
+            "id": 42,
+            "image_id": 19,
+            "category_id": 42,
+            "bbox": [
+                929,
+                126,
+                132,
+                23
+            ],
+            "area": 3036,
+            "iscrowd": 0
+        },
+        {
+            "id": 43,
+            "image_id": 20,
+            "category_id": 43,
+            "bbox": [
+                1494,
+                931,
+                45,
+                48
+            ],
+            "area": 2160,
+            "iscrowd": 0
         }
     ],
     "categories": [
@@ -776,6 +871,31 @@
         {
             "id": 38,
             "name": "lv",
+            "supercategory": ""
+        },
+        {
+            "id": 39,
+            "name": "treasure",
+            "supercategory": ""
+        },
+        {
+            "id": 40,
+            "name": "claim_icon",
+            "supercategory": ""
+        },
+        {
+            "id": 41,
+            "name": "stamina_icon",
+            "supercategory": ""
+        },
+        {
+            "id": 42,
+            "name": "fising_sucess",
+            "supercategory": ""
+        },
+        {
+            "id": 43,
+            "name": "launcher_start_game",
             "supercategory": ""
         }
     ]

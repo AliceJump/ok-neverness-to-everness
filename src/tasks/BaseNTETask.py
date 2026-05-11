@@ -1,5 +1,7 @@
+import contextvars
 import ctypes
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -11,8 +13,8 @@ import win32api
 import win32con
 import win32gui
 import win32process
-from ok import BaseTask, Box, Logger, og, safe_get, CannotFindException
 
+from ok import BaseTask, Box, CannotFindException, Logger, og, safe_get
 from src.Labels import Labels
 from src.scene.NTEScene import NTEScene
 from src.scene.ScreenPosition import ScreenPosition
@@ -20,10 +22,12 @@ from src.utils import game_filters as gf
 from src.utils import image_utils as iu
 
 logger = Logger.get_logger(__name__)
+stamina_re = re.compile(r"(\d+)[\s/\\|!Il／-]+\d+")
 
 
 class BaseNTETask(BaseTask):
     DEFAULT_MOVE = False
+    _current_move = contextvars.ContextVar("current_move", default=None)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -36,6 +40,29 @@ class BaseNTETask(BaseTask):
         self.default_box = ScreenPosition(self)
         self.char_ui_offset = False
         self.next_monthly_card_start = 0
+        self._last_interval_action_time = {}
+        self._action_interval_lock = threading.Lock()
+
+    def sync_config(self, config=None):
+        """同步并保存配置"""
+        target_config = config if config is not None else self.config
+        if hasattr(target_config, "save_file"):
+            target_config.save_file()
+        self._refresh_config_ui(target_config)
+
+    def _refresh_config_ui(self, config):
+        """刷新指定配置对应的 UI 界面"""
+        if not (hasattr(og, "app") and og.app.main_window):
+            return
+
+        vBoxLayout = og.app.main_window.onetime_tab.vBoxLayout
+        for i in range(vBoxLayout.count()):
+            widget = vBoxLayout.itemAt(i).widget()
+            if widget and hasattr(widget, "config"):
+                # 如果 widget 绑定的 config 对象是一致的，则刷新
+                if widget.config is config:
+                    widget.update_config()
+                    break
 
     @property
     def thread_pool_executor(self) -> ThreadPoolExecutor | None:
@@ -43,7 +70,21 @@ class BaseNTETask(BaseTask):
             return None
         return og.my_app.get_thread_pool_executor()
 
-    def _openvino_detect(self, frame, sync, box, threshold, force=False):
+    def submit_periodic_task(self, delay, task, *args, **kwargs):
+        """
+        提交一个循环任务到线程池。
+        如果要停止循环，任务函数应返回 False。
+
+        :param task: 要执行的函数
+        :param delay: 每次执行后的间隔时间（秒）
+        :param args: 位置参数
+        :param kwargs: 关键字参数
+        """
+        if og.my_app is None:
+            return
+        og.my_app.submit_periodic_task(delay, task, *args, **kwargs)
+
+    def _openvino_detect(self, frame, sync, box, threshold, force=False, mask_regions=None):
         if og.my_app is None:
             return []
         if box is None:
@@ -52,24 +93,34 @@ class BaseNTETask(BaseTask):
         if frame is None:
             frame = self.frame
         if sync:
-            results = og.my_app.openvino_detect_sync(image=frame, box=box, threshold=threshold)
+            results = og.my_app.openvino_detect_sync(
+                image=frame, box=box, threshold=threshold, mask_regions=mask_regions
+            )
         else:
             results = og.my_app.openvino_detect_async(
-                image=frame, box=box, threshold=threshold, force=force
+                image=frame,
+                box=box,
+                threshold=threshold,
+                force=force,
+                mask_regions=mask_regions,
             )
         if results:
             self.draw_boxes(boxes=results, color="red")
         return results
 
     def openvino_detect_async(
-        self, frame=None, box: Box = None, threshold=0.5, force=False
+        self, frame=None, box: Box = None, threshold=0.6, force=False, mask_regions=None
     ) -> List[Box]:
         """异步检测，返回结果可能为缓存值"""
-        return self._openvino_detect(frame, False, box, threshold, force=force)
+        return self._openvino_detect(
+            frame, False, box, threshold, force=force, mask_regions=mask_regions
+        )
 
-    def openvino_detect_sync(self, frame=None, box: Box = None, threshold=0.5) -> List[Box]:
+    def openvino_detect_sync(
+        self, frame=None, box: Box = None, threshold=0.5, mask_regions=None
+    ) -> List[Box]:
         """同步检测，会等待结果返回"""
-        return self._openvino_detect(frame, True, box, threshold)
+        return self._openvino_detect(frame, True, box, threshold, mask_regions=mask_regions)
 
     def openvino_clear_cache(self):
         """清空缓存"""
@@ -79,41 +130,75 @@ class BaseNTETask(BaseTask):
 
     @property
     def main_viewport(self):
-        return self.box_of_screen(0.1543, 0.1021, 0.9070, 0.6389, name="main_viewport")
+        return self.box_of_screen(0.0984, 0.1042, 0.8961, 0.8944, name="main_viewport")
 
     # fmt: off
     @overload
     def click(self, x: int | Box | List[Box] = -1, y=-1, move_back=False, name=None, interval=-1,
               move=False, down_time=0.02, after_sleep=0, key='left', hcenter=False,
-              vcenter=False) -> Any:
+              vcenter=False, action_name=None) -> Any:
         ...
     # fmt: on
 
-    def click(self, *args, **kwargs):
-        is_top_level = not hasattr(self, "_current_move")
+    def click(self, *args, action_name=None, **kwargs):
+        if action_name is not None:
+            interval = kwargs.get("interval", 0.1)
+            if not self.check_action_interval(action_name, interval):
+                return False
+            kwargs["interval"] = -1
 
-        if is_top_level:
-            self._current_move = kwargs.get("move", self.DEFAULT_MOVE)
-        kwargs["move"] = self._current_move
+        current_move = self._current_move.get()
+        token = None
+
+        if current_move is None:
+            token = self._current_move.set(kwargs.get("move", self.DEFAULT_MOVE))
+            current_move = self._current_move.get()
+        kwargs["move"] = current_move
 
         try:
             return super().click(*args, **kwargs)
         finally:
-            if is_top_level:
-                delattr(self, "_current_move")
+            if token is not None:
+                self._current_move.reset(token)
 
     # fmt: off
     @overload
     def operate_click(self, x: int | Box | List[Box] = -1, y=-1, move_back=False, name=None,
-                      interval=-1, down_time=0.02, key='left',
-                      hcenter=False, vcenter=False) -> Any:
+                       interval=-1, down_time=0.02, key='left',
+                       hcenter=False, vcenter=False, action_name=None) -> Any:
         ...
     # fmt: on
 
     def operate_click(self, *args, **kwargs):
         kwargs["move"] = True
         kwargs["after_sleep"] = 0
-        self.operate(lambda: self.click(*args, **kwargs), block=True)
+        return self.operate(lambda: self.click(*args, **kwargs), block=True)
+
+    # fmt: off
+    @overload
+    def send_key(self, key, down_time=0.02, interval=-1, after_sleep=0, action_name=None) -> Any:
+        ...
+    # fmt: on
+
+    def send_key(self, *args, action_name=None, **kwargs):
+        if action_name is not None:
+            interval = kwargs.get("interval", 0.1)
+            if not self.check_action_interval(action_name, interval):
+                return False
+            kwargs["interval"] = -1
+        return super().send_key(*args, **kwargs)
+
+    def check_action_interval(self, action_name: str, interval: float) -> bool:
+        if interval <= 0:
+            return True
+        # action_name must be a stable identifier, not a dynamic value.
+        with self._action_interval_lock:
+            now = time.time()
+            last_time = self._last_interval_action_time.get(action_name, 0)
+            if now - last_time < interval:
+                return False
+            self._last_interval_action_time[action_name] = now
+            return True
 
     def operate(self, func: Callable, block=False):
         from src.interaction.NTEInteraction import NTEInteraction
@@ -171,7 +256,7 @@ class BaseNTETask(BaseTask):
 
         if self.scene is not None:
             state, timestamp = self.scene.get_is_in_team_record()
-            if state and (to_sleep := 0.2 - (time.time() - timestamp)) > 0:
+            if state and (to_sleep := 0.5 - (time.time() - timestamp)) > 0:
                 self.sleep(to_sleep)
 
         arr = self.update_char_ui_offset()
@@ -238,35 +323,41 @@ class BaseNTETask(BaseTask):
         cache = self._char_template_cache
         return cache["mat"], cache["mask"], cache["white_pixels"]
 
-    def get_char_match_score(self, index):
-        """获取指定位置的匹配得分（基于像素覆盖率），分值越小越匹配"""
-        template_mat, template_mask, template_white_count = self._get_char_template_data()
+    def get_char_match_score(self, index, frame=None):
+        """获取指定位置的匹配得分（基于模板匹配），分值越小越匹配"""
+        template_mat, _, template_white_count = self._get_char_template_data()
         if template_white_count == 0:
             return 1.0
+        if frame is None:
+            frame = self.frame
 
         base_box = self.get_box_by_name(Labels.is_current_char)
-        if self.char_ui_offset:
-            base_box = self.shift_char_ui_box(base_box)
+        base_box = self.shift_char_ui_box(base_box, expend=True)
         box = self.get_box_by_char_spacing(base_box, index)
         # self.draw_boxes(boxes=box, color="blue")
 
-        current_mat = gf.current_char_filter(box.crop_frame(self.frame), blur=True)
+        current_mat = gf.current_char_filter(box.crop_frame(frame), blur=True)
 
-        # 1. 掩码过滤并计算交集
-        if current_mat.shape == template_mask.shape:
-            current_mat = cv2.bitwise_and(current_mat, template_mask)
+        # 全白检测：过滤后近乎全白说明不是有效弧形，直接排除
+        total_pixels = current_mat.shape[0] * current_mat.shape[1]
+        if total_pixels > 0 and cv2.countNonZero(current_mat) / total_pixels > 0.5:
+            return 1.0
 
-            if current_mat.shape == template_mat.shape:
-                intersection = cv2.bitwise_and(current_mat, template_mat)
-                coverage = cv2.countNonZero(intersection) / template_white_count
-                return 1.0 - coverage
+        # 滑动覆盖率匹配（允许 current_mat 尺寸 >= template_mat）
+        # TM_CCORR 在二值图上 = 255*255 * 重叠白像素数，等价于原 bitwise_and 覆盖率但支持滑动
+        th, tw = template_mat.shape[:2]
+        ch, cw = current_mat.shape[:2]
+        if ch >= th and cw >= tw:
+            result = cv2.matchTemplate(current_mat, template_mat, cv2.TM_CCORR)
+            _, max_val, _, _ = cv2.minMaxLoc(result)
+            coverage = max_val / (template_white_count * 255 * 255)
+            return 1.0 - coverage
 
         return 1.0
 
-    def is_char_at_index(self, index, threshold=0.3):
+    def is_char_at_index(self, index, threshold=0.3, frame=None):
         """判断指定索引是否为当前角色"""
-        self.update_char_ui_offset()
-        score = self.get_char_match_score(index)
+        score = self.get_char_match_score(index, frame=frame)
         new = f"idx {index} conf {score:.3f}"
         if self.info_get("current char") != new:
             self.info_set("current char", new)
@@ -380,7 +471,18 @@ class BaseNTETask(BaseTask):
         in_world = self.in_world()
         return in_team and in_world
 
-    def wait_in_team_and_world(self, time_out=10, raise_if_not_found=True, esc=False):
+    def wait_in_team(self, time_out=30, raise_if_not_found=True, esc=False):
+        success = self.wait_until(
+            self.is_in_team,
+            time_out=time_out,
+            raise_if_not_found=raise_if_not_found,
+            post_action=lambda: self.back(after_sleep=2) if esc else None,
+        )
+        if success:
+            self.sleep(0.1)
+        return success
+
+    def wait_in_team_and_world(self, time_out=30, raise_if_not_found=True, esc=False):
         success = self.wait_until(
             self.in_team_and_world,
             time_out=time_out,
@@ -419,11 +521,29 @@ class BaseNTETask(BaseTask):
         og.device_manager.set_interaction(m)
         self.log_info(f"已切换交互式方式: {get_name(m)}")
 
-    def bring_to_front(self):
+    def is_foreground(self):
+        """
+        检查窗口是否在最前端。
+        """
         if not self.hwnd:
-            return
+            return False
+        return self.hwnd.is_foreground()
 
-        hwnd = self.hwnd
+    def bring_to_front(self):
+        """
+        强制将窗口带到最前端。
+        """
+        if not self.hwnd:
+            self.log_warning("bring_to_front skipped: hwnd_window unavailable")
+            return False
+        hwnd = self.hwnd.hwnd
+
+        if self.is_foreground():
+            self.log_info(f"bring_to_front {hwnd} already is foreground")
+            return True
+
+        self.log_info(f"try bring_to_front {hwnd}")
+
         current_thread_id = 0
         target_thread_id = 0
         foreground_thread_id = 0
@@ -458,8 +578,15 @@ class BaseNTETask(BaseTask):
                 win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
             win32gui.BringWindowToTop(hwnd)
             win32gui.SetForegroundWindow(hwnd)
+            self.sleep(0.1)
+            if self.is_foreground():
+                self.log_info(f"bring_to_front {hwnd} succeeded")
+                return True
+            self.log_info(f"bring_to_front {hwnd} did not keep foreground")
+            return False
         except Exception as e:
             logger.debug(f"bring_to_front failed: {e}")
+            return False
         finally:
             if attached_foreground:
                 ctypes.windll.user32.AttachThreadInput(
@@ -488,14 +615,21 @@ class BaseNTETask(BaseTask):
             mask_function=interac_mask,
         )
 
-    def walk_until_find_interac(self, time_out=10, raise_if_not_found=False):
-        self.send_key_down("w")
-        self.wait_until(
-            self.find_interac,
-            time_out=time_out,
-            raise_if_not_found=raise_if_not_found,
-        )
-        self.send_key_up("w")
+    def walk_until_interac(self, direction="w", time_out=10, raise_if_not_found=False):
+        ret = False
+        try:
+            self.middle_click(after_sleep=0.2)
+            self.send_key_down(direction)
+            ret = bool(
+                self.wait_until(
+                    self.find_interac,
+                    time_out=time_out,
+                    raise_if_not_found=raise_if_not_found,
+                )
+            )
+        finally:
+            self.send_key_up(direction)
+        return ret
 
     def find_traval_button(self):
         box = self.get_box_by_name(Labels.teleport)
@@ -505,14 +639,14 @@ class BaseNTETask(BaseTask):
         return self.find_one(Labels.teleport, box=box)
 
     def click_traval_button(self, travel_btn=None):
-        if not travel_btn:
-            travel_btn = self.find_traval_button()
-        if travel_btn:
-            self.sleep(0.1)
-            self.operate(lambda: self.click(travel_btn, move=True), block=True)
-            self.sleep(1)
-            return True
-        return False
+        if not isinstance(travel_btn, Box):
+            travel_btn = self.wait_until(
+                self.find_traval_button, time_out=10, raise_if_not_found=True
+            )
+
+        self.sleep(0.1)
+        self.operate_click(travel_btn)
+        self.sleep(1)
 
     def openF1panel(self):
         if hasattr(self, "reset_to_false"):
@@ -571,7 +705,7 @@ class BaseNTETask(BaseTask):
         ):
             raise Exception("Please start in game world and in team!")
         self.sleep(0.5)
-        self.info_set("current task", f"in main esc={esc}")
+        self.info_set("current task", None)
 
     def is_main(self, esc=True):
         if self.in_team_and_world():
@@ -637,25 +771,26 @@ class BaseNTETask(BaseTask):
                 return True
             self.handle_monthly_card()
             texts = self.ocr(log=self.debug)
-            if login := self.find_boxes(
-                texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="登录"
-            ):
-                if not self.find_boxes(
-                    texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="+86"
-                ):
-                    self.click(login, after_sleep=1)
-                    self.log_info("点击登录按钮!")
-                return False
-            if agree := self.find_boxes(
-                texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="同意"
-            ):
-                self.log_debug(f"found agree {agree}")
-                if self.find_boxes(
-                    texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match=re.compile("隐私")
-                ):
-                    self.click(agree, after_sleep=1)
-                    self.log_info("点击同意按钮!")
-                return False
+            # if login := self.find_boxes(
+            #     texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="登录"
+            # ):
+            #     if not self.find_boxes(
+            #         texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="+86"
+            #     ):
+            #         self.click(login, after_sleep=1)
+            #         self.log_info("点击登录按钮!")
+            #     return False
+            # if agree := self.find_boxes(
+            #     texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7), match="同意"
+            # ):
+            #     self.log_debug(f"found agree {agree}")
+            #     if self.find_boxes(
+            #         texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.7),
+            #         match=re.compile(r"\d{11}"),
+            #     ):
+            #         self.click(agree, after_sleep=1)
+            #         self.log_info("点击同意按钮!")
+            #     return False
             # if self.find_boxes(texts, match=re.compile("游戏即将重启")):
             #     self.log_info("游戏更新成功, 游戏即将重启")
             #     self.click(self.find_boxes(texts, match="确认"), after_sleep=60)
@@ -664,26 +799,177 @@ class BaseNTETask(BaseTask):
             #     self.sleep(30)
             #     return False
 
-            if start := self.find_boxes(
-                texts, boundary="bottom_right", match=["开始游戏", re.compile("进入游戏")]
-            ):
-                if not self.find_boxes(texts, boundary="bottom_right", match="登录"):
-                    self.click(start)
-                    self.log_info(f"点击开始游戏! {start}")
-                    return False
+            # if start := self.find_boxes(
+            #     texts, boundary="bottom_right", match=["开始游戏", re.compile("进入游戏")]
+            # ):
+            #     if not self.find_boxes(texts, boundary="bottom_right", match="登录"):
+            #         self.click(start)
+            #         self.log_info(f"点击开始游戏! {start}")
+            #         return False
 
-            if login_account := self.find_boxes(
-                texts, match=re.compile("Windows.{0,3}Product", re.IGNORECASE)
+            if app_version := self.find_boxes(
+                texts, match=re.compile(r"pp:[\d\.-]+", re.IGNORECASE)
             ):
-                self.log_info(f"wait_login {login_account}")
-                self.click(0.5, 0.5, after_sleep=3)
+                self.log_info(f"wait_login {app_version}")
+                if not self.hwnd.is_foreground():
+                    self.bring_to_front()
+                    self.sleep(3)
+                self.click(0.499, 0.865, after_sleep=3)
                 return False
+
+    def find_treasure(self):
+        def mask(img):
+            return iu.mask_corners(img, 0.5, 0.5, "all", to_bgr=False)
+        return self.find_one(
+            Labels.treasure, box=self.main_viewport, threshold=0.7, mask_function=mask,
+            use_gray_scale=True
+        )
+
+    def walk_to_treasure(self):
+        if self.find_treasure():
+            self.walk_to_box(self.find_treasure, end_condition=self.find_interac, y_offset=0.1)
+            return True
+
+    def walk_to_box(
+        self, find_function, time_out=30, end_condition=None, y_offset=0.05, x_threshold=0.07
+    ):
+        start = time.time()
+        while time.time() - start < time_out:
+            if ended := self._do_walk_to_box(
+                find_function,
+                time_out=time_out - (time.time() - start),
+                end_condition=end_condition,
+                y_offset=y_offset,
+                x_threshold=x_threshold,
+            ):
+                return ended
+
+    @staticmethod
+    def _resolve_target(result):
+        """将 find_function 的返回值统一为单个目标或 None"""
+        if isinstance(result, list):
+            return result[0] if result else None
+        return result
+
+    def _calc_walk_direction(self, last_target, last_direction, y_offset, x_threshold, centered):
+        """根据目标位置计算下一步移动方向，返回 (direction, centered)"""
+        if last_target is None:
+            return self.opposite_direction(last_direction), centered
+
+        x, y = last_target.center()
+        y = max(0, y - self.height_of_screen(y_offset))
+        x_abs = abs(x - self.width_of_screen(0.5))
+        threshold = 0.04 if not last_direction else x_threshold
+        centered = centered or x_abs <= self.width_of_screen(threshold)
+
+        if not centered:
+            direction = "d" if x > self.width_of_screen(0.5) else "a"
+        else:
+            if last_direction == "s":
+                v_center = 0.45
+            elif last_direction == "w":
+                v_center = 0.6
+            else:
+                v_center = 0.5
+            direction = "s" if y > self.height_of_screen(v_center) else "w"
+        return direction, centered
+
+    def _do_walk_to_box(
+        self, find_function, time_out=30, end_condition=None, y_offset=0.05, x_threshold=0.07
+    ):
+        if find_function:
+            self.wait_until(
+                lambda: (not end_condition or end_condition()) or find_function(),
+                raise_if_not_found=True,
+                time_out=time_out,
+            )
+        last_direction = None
+        start = time.time()
+        ended = False
+        last_target = None
+        centered = False
+        try:
+            while time.time() - start < time_out:
+                self.next_frame()
+                if end_condition:
+                    ended = end_condition()
+                    if ended:
+                        logger.info(f"_do_walk_to_box ended {ended}")
+                        break
+                target = self._resolve_target(find_function())
+                if target:
+                    last_target = target
+                if last_target is None:
+                    self.log_info("find_function not found, change to opposite direction")
+                next_direction, centered = self._calc_walk_direction(
+                    last_target, last_direction, y_offset, x_threshold, centered
+                )
+                if next_direction != last_direction:
+                    if last_direction:
+                        self.send_key_up(last_direction)
+                        self.sleep(0.001)
+                    last_direction = next_direction
+                    if next_direction:
+                        self.send_key_down(next_direction)
+        finally:
+            if last_direction:
+                self.send_key_up(last_direction)
+                self.sleep(0.001)
+        return ended if end_condition else last_direction is not None
+
+    def opposite_direction(self, direction):
+        if direction == "w":
+            return "s"
+        elif direction == "s":
+            return "w"
+        elif direction == "a":
+            return "d"
+        elif direction == "d":
+            return "a"
+        else:
+            return "w"
+
+    def send_interac(self, handle_claim=True):
+        if self.find_interac():
+            self.send_key("f", after_sleep=0.8)
+            if not handle_claim:
+                return True
+            if not self.handle_claim_button():
+                return True
+
+    def handle_claim_button(self):
+        while self.wait_until(self.has_claim, raise_if_not_found=False, time_out=1.5):
+            self.sleep(0.5)
+            self.send_key("esc")
+            self.sleep(0.5)
+            logger.info("handle_claim_button found a claim reward")
+        return True
+
+    def has_claim(self):
+        return not self.is_in_team() and self.find_all_claim()
+
+    def find_all_claim(self) -> List[Box]:
+        box = self.box_of_screen(0.2645, 0.6167, 0.7352, 0.6785, name="reward_area")
+        return self.find_feature(Labels.claim_icon, box=box)
+
+    def get_stamina(self):
+        boxes = self.wait_ocr(
+            0.814, 0.029, 0.898, 0.083, raise_if_not_found=False, match=stamina_re
+        )
+        if not boxes:
+            self.screenshot("stamina_error")
+            return -1
+        current = 0
+        for box in boxes:
+            if match := stamina_re.search(box.name):
+                current = int(match.group(1))
+        self.info_set("当前体力", current)
+        return current
 
 
 def interac_mask(image):
     mask = iu.create_color_mask(image, interac_pink_color, to_bgr=False)
-    kernel = np.ones((3, 3), np.uint8)
-    dilated_mask = cv2.dilate(mask, kernel, iterations=1)
+    dilated_mask = iu.morphology_mask(mask, to_bgr=False)
     return dilated_mask
 
 

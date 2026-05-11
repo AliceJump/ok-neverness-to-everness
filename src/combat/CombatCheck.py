@@ -5,6 +5,7 @@ from functools import cache
 from typing import TYPE_CHECKING, Optional
 
 import cv2
+import numpy as np
 from ok import Box, Logger, find_color_rectangles
 
 from src.Labels import Labels
@@ -25,13 +26,15 @@ class CombatSettle:
 
 
 class CombatCheck(BaseNTETask):
-    TARGET_MATCH_SCALES = (0.6, 0.7, 0.8, 0.9, 1.0)
+    # TARGET_MATCH_SCALES = (0.6, 0.7, 0.8, 0.9, 1.0)
+    _LV_NORM_SIZE = 32
+    _TARGET_MASK_REGIONS = [(0.020, 0.017, 0.145, 0.240)]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._in_ultimate = False
+        self._in_animation = False
         self._in_combat = False
-        self.skip_combat_check = False
+        self.skip_sleep_check = False
         self.sleep_check_interval = 0.2
         self.last_out_of_combat_time = 0
         self.out_of_combat_reason = ""
@@ -48,12 +51,12 @@ class CombatCheck(BaseNTETask):
         self._bg_ocr_lock = threading.Lock()
 
     @property
-    def in_ultimate(self):
-        return self._in_ultimate
+    def in_animation(self):
+        return self._in_animation
 
-    @in_ultimate.setter
-    def in_ultimate(self, value):
-        self._in_ultimate = value
+    @in_animation.setter
+    def in_animation(self, value):
+        self._in_animation = value
         if value:
             self._last_ultimate = time.time()
 
@@ -90,7 +93,7 @@ class CombatCheck(BaseNTETask):
         raise NotImplementedError("子类必须实现 load_chars 方法")
 
     def check_health_bar(self):
-        return self.has_health_bar() or self.is_boss()
+        return self.has_health_bar()
 
     def is_boss(self):
         def filter(image):
@@ -228,7 +231,9 @@ class CombatCheck(BaseNTETask):
     #             tx, ty, score_base = max_loc_e[0], max_loc_e[1], max_val_e
 
     #         # 6. 二次校验：几何特征
-    #         candidate = self._score_target_candidate(roi_bin, roi.shape, tx, ty, tw, th, score_base)
+    #         candidate = self._score_target_candidate(
+    #             roi_bin, roi.shape, tx, ty, tw, th, score_base
+    #         )
     #         if candidate is None:
     #             continue
 
@@ -273,6 +278,10 @@ class CombatCheck(BaseNTETask):
     def _find_red_health_bar(self):
         min_height = self.height_of_screen(5 / 1440)
         min_width = self.width_of_screen(100 / 2560)
+        # if self._in_combat:
+        #     min_width = self.width_of_screen(100 / 2560)
+        # else:
+        #     min_width = self.width_of_screen(30 / 2560)
         max_height = min_height * 2.5
         max_width = self.width_of_screen(200 / 2560)
 
@@ -319,7 +328,7 @@ class CombatCheck(BaseNTETask):
             self.in_sleep_check = False
 
     def do_check_in_combat(self, target):
-        if self.in_ultimate:
+        if self.in_animation:
             return True
         if self._in_combat:
             if self.scene.in_combat() is not None:
@@ -357,9 +366,9 @@ class CombatCheck(BaseNTETask):
                 return self.scene.set_in_combat()
             else:
                 if self._combat_settle.time is None:
-                    self._combat_settle.time = time.time() + 0.5
+                    self._combat_settle.time = time.time() + 0.4
                 if self._combat_settle.time > time.time():
-                    if self.middle_click(interval=0.4):
+                    if self.middle_click(interval=0.35):
 
                         def delay_detect():
                             time.sleep(0.25)
@@ -384,20 +393,30 @@ class CombatCheck(BaseNTETask):
 
             @cache
             def has_target():
-                return self.openvino_detect_async()
+                return self.openvino_detect_async(mask_regions=self._TARGET_MASK_REGIONS)
+
+            @cache
+            def has_lv():
+                return bool(self.find_lv())
+
+            @cache
+            def has_health_bar():
+                return self.has_health_bar()
+
+            @cache
+            def is_boss():
+                return self.is_boss()
 
             # now = time.time()
-            is_boss = self.is_boss()
-            has_lv = bool(self.find_lv())
             is_auto = self.config.get("自动目标") or not isinstance(self, AutoCombatTask)
             if target and not has_target():
                 self.log_debug("try target")
                 self.middle_click(after_sleep=0.1)
 
-            in_combat = (is_boss or has_lv) and (is_auto or has_target())
+            in_combat = (is_boss() or has_lv() or has_health_bar()) and (is_auto or has_target())
             if in_combat:
                 # self.log_info(f"enter combat cost1 {time.time() - now}")
-                if is_boss:
+                if is_boss():
                     self.middle_click()
                 elif not has_target() and not self.target_enemy(wait=True, lv=False):
                     return False
@@ -470,7 +489,9 @@ class CombatCheck(BaseNTETask):
     def combat_detect(self, frame=None, target=True, lv=True):
         if lv and self.find_lv(frame=frame):
             return True
-        if target and self.openvino_detect_sync():
+        if target and self.openvino_detect_sync(
+            frame=frame, mask_regions=self._TARGET_MASK_REGIONS
+        ):
             return True
         return False
 
@@ -510,7 +531,9 @@ class CombatCheck(BaseNTETask):
         is_lv_false = not lv or lv_ret is False
 
         if target and (exhaustive or is_lv_false):
-            target_ret = self.openvino_detect_async(frame=frame, force=force)
+            target_ret = self.openvino_detect_async(
+                frame=frame, force=force, mask_regions=self._TARGET_MASK_REGIONS
+            )
             if target_ret:
                 return True
 
@@ -526,9 +549,9 @@ class CombatCheck(BaseNTETask):
         if frame is None:
             frame = self.frame
 
-        viewport = self.main_viewport
-        self.draw_boxes(boxes=viewport, color="blue")
-        roi = viewport.crop_frame(frame)
+        box = self.box_of_screen(0.1543, 0, 0.9070, 0.7, name="find_lv")
+        self.draw_boxes(boxes=box, color="blue")
+        roi = box.crop_frame(frame)
         binary = gf.isolate_lv_to_white(roi)
 
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -557,14 +580,9 @@ class CombatCheck(BaseNTETask):
                 and abs(cx - self._lv_feat_L[1]) < 0.15
                 and abs(cy - self._lv_feat_L[2]) < 0.15
             ):
-                L_dist_threshold = 3.0
-                dist = cv2.matchShapes(self._lv_cnt_L, cnt, cv2.CONTOURS_MATCH_I3, 0)
-                if (
-                    self._lv_aspect_L * 0.6 < aspect_ratio < self._lv_aspect_L * 1.5
-                ) and dist < L_dist_threshold:
-                    L_candidates.append(
-                        {"x": x, "y": y, "w": w, "h": h, "score": 1 - (dist / L_dist_threshold)}
-                    )
+                iou = self._match_contour_iou(self._lv_norm_L, cnt, x, y, w, h)
+                if (self._lv_aspect_L * 0.6 < aspect_ratio < self._lv_aspect_L * 1.5) and iou > 0.5:
+                    L_candidates.append({"x": x, "y": y, "w": w, "h": h, "score": iou})
 
             # 匹配 v
             elif (
@@ -572,14 +590,9 @@ class CombatCheck(BaseNTETask):
                 and abs(cx - self._lv_feat_v[1]) < 0.15
                 and abs(cy - self._lv_feat_v[2]) < 0.15
             ):
-                v_dist_threshold = 1.0
-                dist = cv2.matchShapes(self._lv_cnt_v, cnt, cv2.CONTOURS_MATCH_I3, 0)
-                if (
-                    self._lv_aspect_v * 0.6 < aspect_ratio < self._lv_aspect_v * 1.5
-                ) and dist < v_dist_threshold:
-                    v_candidates.append(
-                        {"x": x, "y": y, "w": w, "h": h, "score": 1 - (dist / v_dist_threshold)}
-                    )
+                iou = self._match_contour_iou(self._lv_norm_v, cnt, x, y, w, h)
+                if (self._lv_aspect_v * 0.6 < aspect_ratio < self._lv_aspect_v * 1.5) and iou > 0.5:
+                    v_candidates.append({"x": x, "y": y, "w": w, "h": h, "score": iou})
 
         results: list[Box] = []
         for L in L_candidates:
@@ -607,8 +620,8 @@ class CombatCheck(BaseNTETask):
 
                 results.append(
                     Box(
-                        x=int(viewport.x + box_x),
-                        y=int(viewport.y + box_y),
+                        x=int(box.x + box_x),
+                        y=int(box.y + box_y),
                         width=int(box_w),
                         height=int(box_h),
                         confidence=conf,
@@ -628,6 +641,23 @@ class CombatCheck(BaseNTETask):
         cx = (m["m10"] / m["m00"] - x) / float(w)
         cy = (m["m01"] / m["m00"] - y) / float(h)
         return solidity, cx, cy
+
+    def _render_contour_normalized(self, cnt, x, y, w, h):
+        """将轮廓渲染到归一化尺寸的二值图上"""
+        sz = self._LV_NORM_SIZE
+        img = np.zeros((sz, sz), dtype=np.uint8)
+        shifted = cnt.copy()
+        shifted[:, :, 0] = ((cnt[:, :, 0] - x) * (sz - 1) / max(w - 1, 1)).astype(np.int32)
+        shifted[:, :, 1] = ((cnt[:, :, 1] - y) * (sz - 1) / max(h - 1, 1)).astype(np.int32)
+        cv2.drawContours(img, [shifted], -1, 255, cv2.FILLED)
+        return img
+
+    def _match_contour_iou(self, tpl_norm, cnt, x, y, w, h):
+        """计算归一化二值图的 IoU 作为形状相似度"""
+        cand = self._render_contour_normalized(cnt, x, y, w, h)
+        intersection = cv2.countNonZero(cv2.bitwise_and(tpl_norm, cand))
+        union = cv2.countNonZero(cv2.bitwise_or(tpl_norm, cand))
+        return intersection / union if union > 0 else 0.0
 
     def _init_lv_templates(self):
         """初始化 LV 识别所需的模板特征数据"""
@@ -659,10 +689,12 @@ class CombatCheck(BaseNTETask):
         xl, yl, wl, hl = cv2.boundingRect(self._lv_cnt_L)
         self._lv_aspect_L = wl / float(hl)
         self._lv_feat_L = self._extract_shape_fingerprint(self._lv_cnt_L, xl, yl, wl, hl)
+        self._lv_norm_L = self._render_contour_normalized(self._lv_cnt_L, xl, yl, wl, hl)
 
         xv, yv, wv, hv = cv2.boundingRect(self._lv_cnt_v)
         self._lv_aspect_v = wv / float(hv)
         self._lv_feat_v = self._extract_shape_fingerprint(self._lv_cnt_v, xv, yv, wv, hv)
+        self._lv_norm_v = self._render_contour_normalized(self._lv_cnt_v, xv, yv, wv, hv)
 
         self.log_info("[LV-Init] 模板特征初始化完成")
         return True

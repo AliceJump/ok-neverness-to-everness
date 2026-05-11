@@ -400,3 +400,141 @@ msgstr ""
 
 msgid "Dodge all attacks without performing counter attacks"
 msgstr ""
+
+msgid "不支持从OK启动游戏"
+msgstr "Launching the game from OK is not supported"
+
+msgid "任务完成后自动切换至下一个项目"
+msgstr "Automatically switch to the next item after task completion"
+
+msgid "任务类型"
+msgstr "Task Type"
+
+msgid "具体奖励目标"
+msgstr "Specific Reward Target"
+
+msgid "异能升级材料"
+msgstr "Ability Upgrade"
+
+msgid "异能材料序号"
+msgstr "Ability Upgrade Index"
+
+msgid "异象界域"
+msgstr "Anomaly Zone"
+
+msgid "弧盘材料序号"
+msgstr "Arc Ascension Index"
+
+msgid "弧盘突破材料"
+msgstr "Arc Ascension"
+
+msgid "弧盘经验"
+msgstr "Arc Disk Experience"
+
+msgid "甲硬币"
+msgstr "Beetle Coins"
+
+msgid "空幕"
+msgstr "Console"
+
+msgid "空幕序号"
+msgstr "Console Index"
+
+msgid "经验与甲硬币"
+msgstr "EXP & Beetle Coins"
+
+msgid "自动循环项目"
+msgstr "Auto Cycle Items"
+
+msgid "自动进行异象界域任务"
+msgstr "Automatically perform Anomaly Zone tasks"
+
+msgid "角色经验"
+msgstr "Character Experience"
+
+msgid "选择经验与甲硬币任务的具体奖励目标"
+msgstr "Select the specific reward target for EXP & Beetle Coins tasks"
+
+msgid "选择要进行的任务类型"
+msgstr "Select the type of task to perform"
+
+msgid "选择列表中的第几个项目 ({}-{})"
+msgstr "Select which item in the list ({}-{})"
+
+msgid "使用滚轮加速拾取"
+msgstr "Use Scroll Wheel to Speed Up Looting"
+
+msgid "切换角色快速奔跑"
+msgstr "Switch Characters for Rapid Sprinting"
+
+msgid "切换角色数量"
+msgstr "Number of Characters for Switching"
+
+msgid "快速奔跑角色数量"
+msgstr "Number of Rapid Sprint Characters"
+
+msgid "按住Shift生效"
+msgstr "Effective while holding Shift"
+
+msgid "粉爪大劫案"
+msgstr "Pink Paws Heist"
+
+msgid "粉爪大劫案便利性功能"
+msgstr "Pink Paws Heist Convenience Features"
+
+msgid "触发按键"
+msgstr "Trigger Key"
+
+msgid "触发连点将同步生效"
+msgstr "Trigger Auto-Clicking Synchronously"
+
+msgid "触发连点的按键 (按住生效)"
+msgstr "Auto-Clicking Key (Active while held)"
+
+msgid "自动补饵卖鱼"
+msgstr "Auto-Refill Bait & Sell Fish"
+
+msgid "首次抛竿失败时，补充默认鱼饵并出售鱼获"
+msgstr "Refill default bait and sell fish catch when the first cast fails"
+
+msgid "4列对应的键盘按键"
+msgstr "Keyboard keys for 4 columns"
+
+msgid "单曲超时时间(秒)"
+msgstr "Single song timeout (s)"
+
+msgid "异环鼓组音游自动打击与重试"
+msgstr "NTE Rhythm Game Auto Play & Retry"
+
+msgid "打歌次数, 0=无限循环"
+msgstr "Play count, 0=Endless"
+
+msgid "自动音游"
+msgstr "Auto Rhythm Game"
+
+msgid "调试日志"
+msgstr "Debug Log"
+
+msgid "超时秒数"
+msgstr "Timeout (s)"
+
+msgid "输出调试日志"
+msgstr "Output debug logs"
+
+msgid "记录新特征"
+msgstr "Record New Feature"
+
+msgid "输入或选择绑定的{combo} (可选)"
+msgstr "Enter or select the bound {combo} (optional)"
+
+msgid "输入或选择关联的角色名称"
+msgstr "Enter or select the associated character name"
+
+msgid "键位"
+msgstr "Keys"
+
+msgid "Start Game"
+msgstr "Start Game"
+
+msgid "Launcher Path"
+msgstr "Launcher Path"

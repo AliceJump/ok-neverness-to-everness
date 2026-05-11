@@ -400,3 +400,132 @@ msgstr "すべての攻撃を回避"
 
 msgid "Dodge all attacks without performing counter attacks"
 msgstr "カウンター攻撃を行わず、すべての攻撃を回避します"
+
+msgid "不支持从OK启动游戏"
+msgstr "OKからのゲーム起動はサポートされていません"
+
+msgid "任务完成后自动切换至下一个项目"
+msgstr "タスク完了後に次の項目へ自動で切り替えます"
+
+msgid "任务类型"
+msgstr "タスクタイプ"
+
+msgid "具体奖励目标"
+msgstr "具体的な報酬目標"
+
+msgid "异能升级材料"
+msgstr "異能強化"
+
+msgid "异能材料序号"
+msgstr "異能強化番号"
+
+msgid "异象界域"
+msgstr "アノマリーゾーン"
+
+msgid "弧盘材料序号"
+msgstr "弧盤突破番号"
+
+msgid "弧盘突破材料"
+msgstr "弧盤突破"
+
+msgid "弧盘经验"
+msgstr "弧盤経験値"
+
+msgid "甲硬币"
+msgstr "ビートルコイン"
+
+msgid "空幕"
+msgstr "コンソール"
+
+msgid "空幕序号"
+msgstr "コンソール番号"
+
+msgid "经验与甲硬币"
+msgstr "EXP & ビートルコイン"
+
+msgid "自动循环项目"
+msgstr "項目を自動循環"
+
+msgid "自动进行异象界域任务"
+msgstr "アノマリーゾーンタスクを自動実行"
+
+msgid "角色经验"
+msgstr "キャラクター経験値"
+
+msgid "选择经验与甲硬币任务的具体奖励目标"
+msgstr "EXP & ビートルコインタスクの具体的な報酬目標を選択"
+
+msgid "选择要进行的任务类型"
+msgstr "実行するタスクタイプを選択"
+
+msgid "选择列表中的第几个项目 ({}-{})"
+msgstr "リストの何番目の項目を選択するか ({}-{})"
+
+msgid "使用滚轮加速拾取"
+msgstr "マウスホイールで拾得を加速"
+
+msgid "切换角色快速奔跑"
+msgstr "キャラクターを切り替えて高速ダッシュ"
+
+msgid "切换角色数量"
+msgstr "切り替えキャラクター数"
+
+msgid "快速奔跑角色数量"
+msgstr "高速ダッシュキャラクター数"
+
+msgid "按住Shift生效"
+msgstr "Shiftキー長押しで有効"
+
+msgid "粉爪大劫案"
+msgstr "ピンククロー強盗"
+
+msgid "粉爪大劫案便利性功能"
+msgstr "ピンククロー強盗の便利機能"
+
+msgid "触发按键"
+msgstr "トリガーキー"
+
+msgid "触发连点将同步生效"
+msgstr "連打トリガーを同期させる"
+
+msgid "触发连点的按键 (按住生效)"
+msgstr "連打トリガーキー (長押しで有効)"
+
+msgid "自动补饵卖鱼"
+msgstr "自動餌補充・魚売却"
+
+msgid "首次抛竿失败时，补充默认鱼饵并出售鱼获"
+msgstr "初回キャスト失敗時、デフォルトの餌を補充して釣果を売却する"
+
+msgid "4列对应的键盘按键"
+msgstr "4列に対応するキーボードキー"
+
+msgid "单曲超时时间(秒)"
+msgstr "1曲あたりのタイムアウト時間(秒)"
+
+msgid "异环鼓组音游自动打击与重试"
+msgstr "NTEリズムゲームの自動演奏とリトライ"
+
+msgid "打歌次数, 0=无限循环"
+msgstr "演奏回数、0=無限ループ"
+
+msgid "自动音游"
+msgstr "自動リズムゲーム"
+
+msgid "调试日志"
+msgstr "デバッグログ"
+
+msgid "超时秒数"
+msgstr "タイムアウト秒数"
+
+msgid "输出调试日志"
+msgstr "デバッグログを出力"
+
+msgid "键位"
+msgstr "キー設定"
+
+msgid "Start Game"
+msgstr "ゲームを起動"
+
+msgid "Launcher Path"
+msgstr "ランチャーパス"

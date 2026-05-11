@@ -142,39 +142,79 @@ def binarize_bgr_by_adaptive_brightness(
     return binary_bgr
 
 
-def mask_corners(image, ratio_w=0.5555, ratio_h=0.8571):
+def mask_corners(image, ratio_w=0.5555, ratio_h=0.8571, corners=None, to_bgr=True):
     """
-    将图像的左上角和右下角指定的三角形区域涂成黑色，其余区域保留为白色（创建掩码）。
+    将图像指定角落的三角形区域涂成黑色，其余区域保留为白色（创建掩码）。
 
     参数:
     - image: 输入图像
     - ratio_w: 宽度比例，用于定义三角形在水平方向的覆盖范围
     - ratio_h: 高度比例，用于定义三角形在垂直方向的覆盖范围
+    - corners: 需要涂黑的角落，可选:
+      "top_left"/"tl", "top_right"/"tr",
+      "bottom_left"/"bl", "bottom_right"/"br"。
+      也可以传 "all"/"diamond" 或包含多个角落名称的列表/元组/集合。
+      默认涂黑左上角和右下角，保持旧行为。
+    - to_bgr: 是否返回 BGR 3通道掩码，False 时返回单通道掩码
 
     返回:
-    - 处理后的掩码图像 (BGR)，三角形区域为黑色 (0, 0, 0)，其余为白色 (255, 255, 255)
+    - 处理后的掩码图像，指定角落为黑色，其余为白色。
+      当 corners="all" 且 ratio_w/ratio_h 合适时，可得到白色菱形 mask。
     """
     h, w = image.shape[:2]
 
-    # 1. 计算左上角三角区域顶点
-    pt1_tl = [0, 0]
-    pt2_tl = [int(w * ratio_w), 0]
-    pt3_tl = [0, int(h * ratio_h)]
+    corner_aliases = {
+        "top_left": "top_left",
+        "tl": "top_left",
+        "top_right": "top_right",
+        "tr": "top_right",
+        "bottom_left": "bottom_left",
+        "bl": "bottom_left",
+        "bottom_right": "bottom_right",
+        "br": "bottom_right",
+    }
 
-    # 2. 计算右下角三角区域顶点
-    pt1_br = [w, h]
-    pt2_br = [int(w * (1 - ratio_w)), h]
-    pt3_br = [w, int(h * (1 - ratio_h))]
+    all_corners = ("top_left", "top_right", "bottom_left", "bottom_right")
 
-    # 定义多边形点集
+    if corners is None:
+        corners = ("top_left", "bottom_right")
+    elif isinstance(corners, str):
+        corners = corners.lower()
+        if corners in ("all", "diamond"):
+            corners = all_corners
+        else:
+            corners = (corners,)
+    selected_corners = set()
+    for corner in corners:
+        corner_key = corner.lower() if isinstance(corner, str) else corner
+        try:
+            selected_corners.add(corner_aliases[corner_key])
+        except KeyError as exc:
+            raise ValueError(f"Unsupported corner: {corner}") from exc
+
+    x_left = int(w * ratio_w)
+    x_right = int(w * (1 - ratio_w))
+    y_top = int(h * ratio_h)
+    y_bottom = int(h * (1 - ratio_h))
+
+    corner_points = {
+        "top_left": [[0, 0], [x_left, 0], [0, y_top]],
+        "top_right": [[w, 0], [x_right, 0], [w, y_top]],
+        "bottom_left": [[0, h], [x_left, h], [0, y_bottom]],
+        "bottom_right": [[w, h], [x_right, h], [w, y_bottom]],
+    }
+
     contours = [
-        np.array([pt1_tl, pt2_tl, pt3_tl], dtype=np.int32),
-        np.array([pt1_br, pt2_br, pt3_br], dtype=np.int32),
+        np.array(corner_points[corner], dtype=np.int32) for corner in selected_corners
     ]
 
-    # 在掩码图上填充白色
-    white = np.ones_like(image) * 255
-    result = cv2.fillPoly(white, contours, (0, 0, 0))  # 黑色填充
+    mask_shape = image.shape if to_bgr else image.shape[:2]
+    white = np.ones(mask_shape, dtype=np.uint8) * 255
+    if not contours:
+        return white
+
+    fill_color = (0, 0, 0) if to_bgr else 0
+    result = cv2.fillPoly(white, contours, fill_color)  # 黑色填充
 
     return result
 
@@ -240,7 +280,10 @@ def show_images(images, names=None, scale=None, wait_key=0):
             for image in images
         ]
     for i, image in enumerate(images):
-        cv2.imshow(f"{names[i]}_{i}", image)
+        win_name = f"{names[i]}_{i}"
+        cv2.namedWindow(win_name, cv2.WINDOW_AUTOSIZE)
+        cv2.moveWindow(win_name, 100 * i, 100 * i)
+        cv2.imshow(win_name, image)
     cv2.waitKey(wait_key)
 
 
@@ -308,23 +351,32 @@ def adjust_lightness_contrast_lab(img, brightness=0, contrast=0):
     result_lab = cv2.merge((lightness, a, b))
     return cv2.cvtColor(result_lab, cv2.COLOR_Lab2BGR)
 
-def dilate_mask(mask: np.ndarray, kernel_size: int = 3, to_bgr: bool = True) -> np.ndarray:
+
+def morphology_mask(
+    mask: np.ndarray, kernel_size: int = 3, closing: bool = False, to_bgr: bool = True
+) -> np.ndarray:
     """
-    对遮罩（二值图像）进行膨胀处理。
+    对遮罩（二值图像）进行形态学处理。
 
     Args:
         mask (np.ndarray): 输入的二值遮罩图像.
-        kernel_size (int): 膨胀核的大小, 默认为 3.
+        kernel_size (int): 结构元的大小, 默认为 3.
+        closing (bool): 是否进行闭运算 (先膨胀再腐蚀), 默认为 False (仅膨胀).
         to_bgr (bool): 是否将结果转换为 BGR 3通道格式, 默认为 True.
 
     Returns:
-        np.ndarray: 膨胀后的遮罩图像 (3通道BGR或单通道二值图).
+        np.ndarray: 处理后的遮罩图像 (3通道BGR或单通道二值图).
     """
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
-    dilated = cv2.dilate(mask, kernel, iterations=1)
-    if to_bgr and len(dilated.shape) == 2:
-        dilated = cv2.cvtColor(dilated, cv2.COLOR_GRAY2BGR)
-    return dilated
+    if closing:
+        result = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    else:
+        result = cv2.dilate(mask, kernel, iterations=1)
+
+    if to_bgr and len(result.shape) == 2:
+        result = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
+    return result
+
 
 def restore_world_brightness(image, percentile=0.99):
     """
