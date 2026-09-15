@@ -2,7 +2,6 @@ import re
 import time
 
 from ok import TaskDisabledException
-from qfluentwidgets import FluentIcon
 
 from src.Labels import Labels
 from src.tasks.BaseNTETask import BaseNTETask, interac_pink_color
@@ -32,8 +31,6 @@ class FountainTask(NTEOneTimeTask, BaseNTETask):
         super().__init__(*args, **kwargs)
         self._check_confirm_timer = 0
         self.name = "喷泉签到"
-        self.group_name = "日常/周常"
-        self.group_icon = FluentIcon.CALENDAR
         self.visible = False
         self.default_config.update({self.CONF_SIGN_MODE: self.SIGN_MODE_SIGN})
         self.config_type.update(
