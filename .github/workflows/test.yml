@@ -10,6 +10,7 @@ jobs:
     runs-on: windows-latest
 
     env:
+      PYTHONFAULTHANDLER: '1'
       PYTHONIOENCODING: 'UTF-8'
 
     strategy:
@@ -55,6 +56,6 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m unittest discover -s tests -p "*test*.py" --top-level-directory . -v 2>&1
+          python -X faulthandler -m unittest discover -s tests -p "*test*.py" --top-level-directory . -v 2>&1
 
   
