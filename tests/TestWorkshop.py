@@ -29,8 +29,12 @@ from src.char.workshop.models import (
     parse_version,
 )
 from src.char.workshop.repository import IndexSource, WorkshopRepository, WorkshopRepositoryError
-from src.char.workshop.service import WorkshopInstallError, WorkshopPackageService
-from src.ui.features.characters.workshop_dialog import WorkshopDialog
+from src.char.workshop.service import (
+    WorkshopInstallError,
+    WorkshopInstallErrorCode,
+    WorkshopPackageService,
+)
+from src.ui.features.characters.workshop_dialog import PackageImportDialog, WorkshopDialog
 
 SOURCE = (
     "from src.char.BaseChar import BaseChar, Element\n\n"
@@ -210,6 +214,36 @@ class TestWorkshop(unittest.TestCase):
         self.assertFalse(
             any(item["name"] == "失败方案" for item in self.manager.get_team_presets())
         )
+
+    def test_existing_external_directory_has_structured_install_error(self):
+        directory = self.external_dir / "existing"
+        directory.mkdir(parents=True)
+        contents = ArchiveContents(self._package(), {"sample.py": SOURCE})
+
+        with self.assertRaises(WorkshopInstallError) as raised:
+            self.service.install_contents(contents, "冲突方案", directory.name)
+
+        self.assertEqual(
+            raised.exception.code,
+            WorkshopInstallErrorCode.EXTERNAL_DIRECTORY_EXISTS,
+        )
+        self.assertEqual(raised.exception.details["directory"], directory.name)
+        self.assertFalse(
+            any(item["name"] == "冲突方案" for item in self.manager.get_team_presets())
+        )
+
+    def test_import_dialog_rejects_existing_external_directory(self):
+        parent = QWidget()
+        parent.resize(800, 600)
+        dialog = PackageImportDialog(
+            self._package(),
+            "existing.zip",
+            parent,
+            directory_exists=lambda directory: directory == "existing",
+        )
+
+        self.assertFalse(dialog.yesButton.isEnabled())
+        self.assertIn("existing", dialog.error_label.text())
 
     def test_repository_uses_chinese_source_then_falls_back(self):
         catalog = {
