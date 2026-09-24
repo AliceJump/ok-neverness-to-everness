@@ -138,10 +138,6 @@ class BaseNTETask(
     def openvino_available(self):
         return getattr(og.my_app, "openvino_available", None)
 
-    @property
-    def main_viewport(self):
-        return self.box_of_screen(0.0984, 0.1042, 0.8961, 0.8944, name="main_viewport")
-
     # fmt: off
     def click(self, x: int | Box | List[Box] = -1, y=-1, move_back=None, name=None,
               interval=-1, move=None, down_time=0.02, after_sleep=0, key='left',
@@ -766,7 +762,7 @@ class BaseNTETask(
         # now = time.time()
         result = self.find_one(
             Labels.treasure,
-            box=self.main_viewport,
+            box=self.pos.screen.main_viewport.to_box(),
             threshold=0.7,
             use_gray_scale=True,
         )
@@ -893,7 +889,7 @@ class BaseNTETask(
         raise_if_not_found=True,
     ):
         if range is None:
-            box = self.main_viewport
+            box = self.pos.screen.main_viewport.to_box()
         elif isinstance(range, Box):
             box = range
         else:
@@ -922,7 +918,7 @@ class BaseNTETask(
 
     def find_confirm(self, box=None, threshold=0.7) -> Box:
         if not isinstance(box, Box):
-            box = self.main_viewport
+            box = self.pos.screen.main_viewport.to_box()
         return self.find_best_match_in_box(
             box=box,
             to_find=[Labels.confirm_btn_1, Labels.confirm_btn_2],
@@ -932,7 +928,7 @@ class BaseNTETask(
 
     def find_confirms(self, box=None, threshold=0.7) -> list[Box]:
         if not isinstance(box, Box):
-            box = self.main_viewport
+            box = self.pos.screen.main_viewport.to_box()
         match_feature: list[list[Box]] = []
         for feature_name in [Labels.confirm_btn_1, Labels.confirm_btn_2]:
             features = self.find_feature(
