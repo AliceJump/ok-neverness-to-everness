@@ -19,7 +19,7 @@ env:
   SIGN_SETUP: 'false'
   # Non-empty reuses an existing release EXE; empty builds a new EXE.
   USE_RELEASE: 'https://api.github.com/repos/BnanZ0/ok-nte/releases/tags/v1.3.5'
-  SYNC_GITHUB_REPO: 'true'
+  SYNC_GITHUB_REPO: 'false'
 
 defaults:
   run:
