@@ -307,7 +307,7 @@ class BaseCombatTask(CharElementUIMixin, CombatCheck):
             self.freeze_durations.clear()
             self.freeze_durations.extend(records)
 
-    def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+    def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False) -> float:
         """计算扣除冻结时间后经过的时间。
 
         Args:
