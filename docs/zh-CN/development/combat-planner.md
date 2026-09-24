@@ -13,7 +13,7 @@ Planner 是队伍大脑。角色只声明一个 `CombatPlan`：
 公开导入入口固定使用：
 
 ```python
-from src.combat.planner import ActionSlot, CombatContext, FieldClaim, Planner, RoleProfile
+from src.combat.planner import ActionSlot, CombatContext, ExpectedEntry, FieldClaim, Planner, RoleProfile
 ```
 
 `src.combat.planner` 只导出正式开发 API。角色代码不要直接导入
@@ -267,7 +267,8 @@ self.planner_action(
 
 ## FieldClaim
 
-`FieldClaim` 表达“我应该被切进来”，不是动作。它只抬高目标角色的普通入场评分；
+`FieldClaim` 表达“我应该被切进来”，不是动作。`low`、`normal`、`high` 和
+`critical` 抬高普通入场评分；`strict` 在下一次切人决策时直接选定该角色。
 角色切入后仍由 planner 从 `actions`、strict route/request 或 `entry` 中选择动作。
 
 ```python
@@ -283,11 +284,34 @@ def combat_plan(self, context):
     return self.plan(self.click_ultimate_action(), claims=claims)
 ```
 
+需要在限时窗口内回场时，可在 `combat_plan()` 中声明 strict claim：
+
+```python
+def combat_plan(self, context):
+    ultimate = self.click_ultimate_action()
+    claims = []
+    if self.should_return_now():
+        claims.append(
+            FieldClaim.strict(
+                reason="ultimate window ending",
+            )
+        )
+    return self.plan(ultimate, claims=claims)
+```
+
+planner 每次切人决策都会重新读取候选角色的 claim。已锁定的 strict route 优先；
+之后 strict claim 优先于环合反应、active request 和普通评分。多个角色同时声明
+strict claim 时，planner 用它们的普通评分及最近行动时间决定目标。strict claim
+只在当前角色的动作结束后生效，不会中断动作；切人时跳过 `SwitchInGuard` 和
+`wait_switch_cd()` 等待。strict claim 只要求切入, 不设置 `expected_entry`。
+切入后角色按自己的普通 `entry` 流程执行动作。
+
 使用建议：
 
 - 只是 Q/E 可用，不需要 FieldClaim；action 本身会参与评分。
-- 需要“之后抢回场”时用 FieldClaim。
-- 抢回场后需要优先做某动作时，加 `expected_entry`。
+- 需要“之后抢回场”时用普通 FieldClaim；必须在下一次切人决策中回场时用 `FieldClaim.strict()`。
+- `FieldClaim.critical()` 仍是普通评分档位，不会强制切人。
+- 普通 claim 抢回场后需要优先做某动作时, 加 `expected_entry`。
 - 多个 FieldClaim 适合表达多个独立机制入口；planner 不累加 claim 分，只选择最高等级的匹配 claim。
 
 ## combat_policies

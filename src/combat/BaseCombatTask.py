@@ -459,12 +459,11 @@ class BaseCombatTask(CharElementUIMixin, CombatCheck):
         free_intro=False,
         require_intro=False,
     ):
-        decision = self.combat_planner.decide_switch(
+        return self.combat_planner.decide_switch(
             current_char,
             free_intro=free_intro,
             require_intro=require_intro,
         )
-        return decision.target, decision.has_intro
 
     def _wait_switch_in_guard(
         self,
@@ -570,13 +569,18 @@ class BaseCombatTask(CharElementUIMixin, CombatCheck):
                 )
                 if retry_intro and not has_intro and not intro_replanned and intro_ready:
                     intro_replanned = True
-                    new_switch_to, new_has_intro = self._decide_switch_to(
+                    new_decision = self._decide_switch_to(
                         current_char,
                         free_intro,
                         require_intro=True,
                     )
+                    new_switch_to = new_decision.target
+                    new_has_intro = new_decision.has_intro
                     if new_has_intro and new_switch_to != current_char:
-                        if not self.combat_planner.has_strict_route(current_char):
+                        if not (
+                            new_decision.strict
+                            or self.combat_planner.has_strict_route(current_char)
+                        ):
                             self._wait_switch_in_guard(current_char, new_switch_to, new_has_intro)
                         switch_to = new_switch_to
                         has_intro = new_has_intro
@@ -686,7 +690,7 @@ class BaseCombatTask(CharElementUIMixin, CombatCheck):
             )
             return
 
-        if not self.combat_planner.has_strict_route(current_char):
+        if not (decision.strict or self.combat_planner.has_strict_route(current_char)):
             self._wait_switch_in_guard(current_char, switch_to, has_intro)
             current_char.wait_switch_cd()
 

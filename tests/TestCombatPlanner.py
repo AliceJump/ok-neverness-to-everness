@@ -32,7 +32,7 @@ class FakeTask:
     def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
         return 999
 
-    def find_element_ring_reaction_target(self, source_char):
+    def find_element_reaction_target(self, source_char):
         return self.reaction_target
 
 
@@ -410,6 +410,81 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(decision.target, claimed)
         self.assertEqual(calls, ["claimed_ultimate"])
         self.assertEqual(result.name, "claimed_ultimate")
+
+    def test_strict_field_claim_beats_ordinary_score_and_element_reaction(self):
+        current = FakeChar(0, "current")
+        ordinary = FakeChar(
+            1,
+            "ordinary",
+            field_preference=FieldPreference.MAIN_DPS,
+            tags={ActionTag.ULTIMATE_ACTION},
+        )
+        claim_active = {"value": False}
+        claimed = FakeChar(
+            2,
+            "claimed",
+            priority_ready=lambda _: False,
+            max_field_time=0,
+            claims=lambda _: [FieldClaim.strict("return now")] if claim_active["value"] else [],
+        )
+        planner = self._planner([current, ordinary, claimed])
+
+        self.assertEqual(planner.decide_switch(current).target, ordinary)
+        claim_active["value"] = True
+        decision = planner.decide_switch(current)
+        self.assertEqual(decision.target, claimed)
+        self.assertTrue(decision.strict)
+
+        current._cycle_full = True
+        planner.task.reaction_target = ordinary
+        decision = planner.decide_switch(current)
+        self.assertEqual(decision.target, claimed)
+        self.assertTrue(decision.strict)
+
+    def test_locked_strict_route_precedes_strict_field_claim(self):
+        current = FakeChar(0, "current")
+        route_target = FakeChar(1, "route target")
+        claimed = FakeChar(2, "claimed", claims=[FieldClaim.strict("return now")])
+        planner = self._planner([current, route_target, claimed])
+        self._publish(
+            planner,
+            current,
+            lambda context: context.request_route([FollowupStep.for_switch(route_target)]),
+        )
+
+        decision = planner.decide_switch(current)
+
+        self.assertEqual(decision.target, route_target)
+        self.assertIn("strict route", decision.reason)
+
+    def test_strict_field_claim_uses_ordinary_entry_flow(self):
+        calls = []
+        current = FakeChar(0, "current")
+        skill = self._action("skill", {ActionTag.SKILL_ACTION}, ActionSlot.SKILL, calls)
+        ultimate = self._action("ultimate", {ActionTag.ULTIMATE_ACTION}, ActionSlot.ULTIMATE, calls)
+
+        def entry():
+            yield skill
+
+        claimed = FakeChar(
+            1,
+            "claimed",
+            plan_items=lambda _: CombatPlan(
+                actions=[skill, ultimate],
+                claims=[FieldClaim.strict("return now")],
+                entry=entry,
+            ),
+        )
+        planner = self._planner([current, claimed])
+
+        decision = planner.decide_switch(current)
+        planner.expect_entry_action(decision.target, decision.expected_entry)
+        result = planner.perform_current_char(claimed)
+
+        self.assertEqual(decision.target, claimed)
+        self.assertIsNone(decision.expected_entry)
+        self.assertEqual(calls, ["skill"])
+        self.assertEqual(result.name, "skill")
 
     def test_combat_start_uses_role_profile_priority(self):
         current = FakeChar(0, "current")
