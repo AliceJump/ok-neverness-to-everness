@@ -83,6 +83,7 @@ class Zankou(BaseChar):
             if click_skill := self.click_skill():
                 if feature_name == Labels.zankou_skill_purple:
                     self.sleep(2)
+                    purple_skill = True
         return click_skill, purple_skill
 
     def find_ult_purple(self):
