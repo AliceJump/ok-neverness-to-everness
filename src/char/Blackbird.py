@@ -61,13 +61,11 @@ class Blackbird(BaseChar):
                 yield ultimate
                 self.in_ult = False
 
-            skill_result = yield skill
-            if skill_result:
+            if (yield skill):
                 self.claim_after_skill = True
                 return
 
-            ultimate_result = yield ultimate.repeat_for_entry()
-            if ultimate_result:
+            if (yield ultimate.repeat_for_entry()):
                 self.in_ult = True
                 self.perform_in_ult(context, skill)
                 dps_list = self.get_teammates_by_role(Planner.Role.MAIN_DPS)
