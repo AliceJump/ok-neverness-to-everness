@@ -49,11 +49,10 @@ class Planner:
         ARC_ACTION = "arc_action"
         SUPPORT = "support"
         TEAM_BUFF = "team_buff"
-        COORDINATION = "coordination"
+        HIGH_PRIORITY = "high_priority"
         SKILL_ACTION = "skill_action"
         FIELD_TIME = "field_time"
         LEGACY_COMBO = "legacy_combo"
-        COORDINATION_FINISHER = "coordination_finisher"
 
     class ActionSlot(StrEnum):
         """游戏动作槽位。
@@ -124,11 +123,10 @@ ACTION_TAG_SCORES = {
     ActionTag.ARC_ACTION: 0,
     ActionTag.SUPPORT: 45,
     ActionTag.TEAM_BUFF: 260,
-    ActionTag.COORDINATION: 80,
+    ActionTag.HIGH_PRIORITY: 160,
     ActionTag.SKILL_ACTION: 75,
     ActionTag.FIELD_TIME: 40,
     ActionTag.LEGACY_COMBO: 45,
-    ActionTag.COORDINATION_FINISHER: 160,
 }
 
 

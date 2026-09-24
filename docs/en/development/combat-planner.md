@@ -134,8 +134,7 @@ Common tags:
 - `ARC_ACTION`: Arc action, scored as 0.
 - `SUPPORT`: Support, healing, or buff action.
 - `TEAM_BUFF`: A key team-wide buff. Use only when the buff should be cast before the main DPS ultimate.
-- `COORDINATION`: An action that publishes a coordination route or window.
-- `COORDINATION_FINISHER`: A finishing action after coordination is complete.
+- `HIGH_PRIORITY`: Significantly increases an action's switch score. Use for a small number of actions that are especially valuable to attempt; it does not change action order after a character enters.
 - `FIELD_TIME`: A planner-built field-time action; characters should not declare it themselves.
 - `LEGACY_COMBO`: Legacy combo action.
 - `DEFAULT_ACTION`: Low-value fallback entry.

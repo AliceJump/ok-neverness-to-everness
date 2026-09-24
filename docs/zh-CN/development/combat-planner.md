@@ -152,8 +152,7 @@ flow 外预查询完整 action 时，使用 `context.is_action_allowed(self, act
 - `ARC_ACTION`：弧盘动作，评分为 0。
 - `SUPPORT`：辅助/治疗/增益类动作。
 - `TEAM_BUFF`：为全队提供增益的关键动作。仅在该增益应优先于主 DPS 终结技施放时使用。
-- `COORDINATION`：发布协作路线或窗口的动作。
-- `COORDINATION_FINISHER`：协作完成后的收尾动作。
+- `HIGH_PRIORITY`：显著提高动作的切人评分。用于少数特别值得优先尝试的动作；它不会改变角色上场后的动作执行顺序。
 - `FIELD_TIME`：planner 内建站场动作，角色不应自己声明。
 - `LEGACY_COMBO`：旧出招表动作。
 - `DEFAULT_ACTION`：低价值兜底入口。
