@@ -749,7 +749,7 @@ class BaseNTETask(
 
         def action():
             self.openESCpanel()
-            self.operate_click(0.9305, 0.8729)
+            self.operate_click(*self.pos.panels.esc.back_to_login)
             self.sleep(0.5)
             return self.find_confirm(box=box)
 
@@ -962,7 +962,7 @@ class BaseNTETask(
         box = self.box_of_screen(0.785, 0.022, 0.814, 0.076, name="stamina_icon")
         self.wait_until(
             lambda: self.find_one(Labels.stamina_icon, box=box),
-            pre_action=lambda: self.operate_click(0.0563, 0.4924, interval=0.5),
+            pre_action=lambda: self.operate_click(*self.pos.panels.f1.domain, interval=0.5),
             settle_time=0.5,
             time_out=10,
         )
