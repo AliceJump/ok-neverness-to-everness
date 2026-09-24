@@ -980,6 +980,37 @@ class TestCombatPlanner(unittest.TestCase):
         self.assertEqual(calls, ["fadia_ultimate"])
         self.assertEqual(result.name, "fadia_ultimate")
 
+    def test_entry_flow_publishes_route_before_finishing(self):
+        calls = []
+        ultimate = self._action(
+            "source_ultimate",
+            {ActionTag.ULTIMATE_ACTION},
+            ActionSlot.ULTIMATE,
+            calls,
+        )
+        target = FakeChar(1, "target")
+
+        def plan(context):
+            def entry():
+                ultimate_result = yield ultimate
+                if ultimate_result:
+                    context.request_route(
+                        [FollowupStep.for_switch(target, reason="switch to target")],
+                        reason="source finished ultimate",
+                    )
+
+            return CombatPlan([ultimate], entry=entry)
+
+        source = FakeChar(0, "source", plan_items=plan)
+        planner = self._planner([source, target])
+
+        planner.perform_current_char(source)
+        decision = planner.decide_switch(source)
+
+        self.assertEqual(calls, ["source_ultimate"])
+        self.assertIs(decision.target, target)
+        self.assertIn("strict route switch", decision.reason)
+
     def test_entry_flow_can_continue_after_failure(self):
         calls = []
         ultimate = self._action(

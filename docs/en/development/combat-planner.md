@@ -87,6 +87,7 @@ Rules:
 
 - Only declare actions and entry requests when creating a plan; do not send input.
 - Do not call `context.request_route()`, `reserve_actions()`, or `request_tags()` when creating a plan. Publish these one-time requests in action execution, or after receiving a successful result in the entry flow.
+- Requests published by an entry flow are collected when it next yields or finishes. A request published after receiving a result still takes effect if the flow returns immediately.
 - `actions` is the catalog used for scoring and coordination matching; `entry` is the ordinary entry execution flow.
 - Multiple independent `claims` may be passed. They do not stack scores; the planner uses only the highest-priority matching claim for the current character.
 - Strict routes, expected entries, and active requests take scheduling priority over ordinary entry flow.

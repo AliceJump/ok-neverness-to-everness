@@ -548,7 +548,7 @@ class CombatPlanner:
         try:
             action = next(entry_flow) if result is None else entry_flow.send(result)
         except StopIteration:
-            return None
+            action = None
         published_requests = context._consume_published_requests()
         self._ensure_followup_sources(context.current_char, published_requests)
         self.state.add_requests(published_requests)
