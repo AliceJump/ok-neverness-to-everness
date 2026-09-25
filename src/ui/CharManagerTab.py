@@ -187,9 +187,14 @@ class CharManagerTab(CustomTab):
         self.data_manager_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.data_manager_btn.clicked.connect(self.show_data_manager)
 
+        self.workshop_btn = PushButton(FluentIcon.BOOK_SHELF, self.tr("工坊"), self)
+        self.workshop_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.workshop_btn.clicked.connect(self.on_open_workshop)
+
         self.left_v_layout.addWidget(self.refresh_btn)
         self.left_v_layout.addWidget(self.delete_char_btn)
         self.left_v_layout.addWidget(self.data_manager_btn)
+        self.left_v_layout.addWidget(self.workshop_btn)
         self.left_v_layout.addWidget(self.char_list_widget, 1)
 
         # Right side: Detail View
@@ -468,6 +473,10 @@ class CharManagerTab(CustomTab):
             return
 
         reveal_in_explorer(zip_path)
+
+    def on_open_workshop(self) -> None:
+        if self.owner and hasattr(self.owner, "navigate_to_workshop"):
+            self.owner.navigate_to_workshop()
 
     def show_data_manager(self):
         dialog = MessageBoxBase(self.window())
