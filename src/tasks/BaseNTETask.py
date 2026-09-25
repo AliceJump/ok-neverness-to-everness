@@ -39,10 +39,13 @@ MSG_MAIN_DETECTION_FAILED = (
     "2. 尝试开启 Windows “自动管理应用的颜色”设置。"
 )
 MSG_WORLD_DETECTION_FAILED = "大世界检测失败: 请检查游戏内 UI 透明度是否已设置为 1.0。"
+MOUSE_CONTROL_WARNING_TITLE = "鼠标占用警告"
 MOUSE_CONTROL_WARNING = (
-    "⚠️ 正在运行 {mode}\n"
-    "该功能会高频占用/争夺鼠标。如需停止, 请使用热键暂停 ok-nte, 再手动停止任务。\n"
-    "当前热键: {hotkey} (如无法确认当前热键则点击取消, 主动确认后再运行)"
+    "即将运行: {mode}\n\n"
+    "此任务会频繁控制鼠标。\n"
+    "停止方法: 按热键暂停 ok-nte, 再手动停止任务。\n\n"
+    "当前热键: {hotkey}\n"
+    "如不确定热键, 请点击取消, 确认后再运行。"
 )
 
 
@@ -90,7 +93,7 @@ class BaseNTETask(
             mode = self.tr(self.name)
 
         confirmation = ConfirmationRequested(
-            self.tr(self.name),
+            self.tr(MOUSE_CONTROL_WARNING_TITLE),
             self.tr(MOUSE_CONTROL_WARNING).format(mode=mode, hotkey=hotkey),
             rich_text=False,
             hide_cancel=False,
