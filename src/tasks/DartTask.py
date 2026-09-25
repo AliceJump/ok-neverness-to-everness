@@ -5,15 +5,13 @@ from ok import TaskDisabledException
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 
-INST = "在NPC旁边启动任务，脚本会自动交互并循环刷星票。"
-EN_INST = "Start near the NPC. The script will auto-interact and loop."
-
 
 class DartTask(NTEOneTimeTask, BaseNTETask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "自动飞镖"
-        self.description = "在npc旁边启动自动飞镖并循环刷星票"
+        self.description = "在可进行NPC交互的位置启动任务"
+        self.supported_languages = ["zh_CN", "zh_TW"]
         self.add_rounds_config(default=0)
 
     def run(self):
