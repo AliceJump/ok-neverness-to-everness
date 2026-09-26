@@ -577,10 +577,7 @@ class BaseCombatTask(CharElementUIMixin, CombatCheck):
                     new_switch_to = new_decision.target
                     new_has_intro = new_decision.has_intro
                     if new_has_intro and new_switch_to != current_char:
-                        if not (
-                            new_decision.strict
-                            or self.combat_planner.has_strict_route(current_char)
-                        ):
+                        if not new_decision.skip_switch_waits:
                             self._wait_switch_in_guard(current_char, new_switch_to, new_has_intro)
                         switch_to = new_switch_to
                         has_intro = new_has_intro
@@ -690,7 +687,7 @@ class BaseCombatTask(CharElementUIMixin, CombatCheck):
             )
             return
 
-        if not (decision.strict or self.combat_planner.has_strict_route(current_char)):
+        if not decision.skip_switch_waits:
             self._wait_switch_in_guard(current_char, switch_to, has_intro)
             current_char.wait_switch_cd()
 

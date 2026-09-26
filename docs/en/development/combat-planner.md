@@ -274,6 +274,8 @@ def combat_plan(self, context):
 
 The planner reads candidate claims again at each switch decision. A locked strict route takes precedence; a strict claim then takes precedence over entry reactions, active requests, and ordinary scoring. If several characters declare strict claims, the planner selects among them by ordinary score and last action time. A strict claim takes effect after the current character finishes its action; it does not interrupt an action. The switch skips `SwitchInGuard` and `wait_switch_cd()` delays. A strict claim only requests the switch; after arrival, the character follows its ordinary `entry` flow.
 
+`SwitchDecision.skip_switch_waits` carries this execution policy from the planner to the switch executor. The planner sets it for locked strict routes and strict field claims; ordinary decisions default to waiting for `SwitchInGuard` and `wait_switch_cd()`. If the target is recalculated when an intro becomes ready during a switch, the executor uses the new decision's policy.
+
 Usage guidance:
 
 - If only Q/E is available, no `FieldClaim` is needed; the action itself participates in scoring.

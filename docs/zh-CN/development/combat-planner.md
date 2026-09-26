@@ -307,6 +307,11 @@ strict claim 时，planner 用它们的普通评分及最近行动时间决定�
 `wait_switch_cd()` 等待。strict claim 只要求切入, 不设置 `expected_entry`。
 切入后角色按自己的普通 `entry` 流程执行动作。
 
+`SwitchDecision.skip_switch_waits` 将切人等待策略从 planner 传给执行端。已锁定的
+strict route 和 strict field claim 会设置此字段；普通决策默认等待
+`SwitchInGuard` 和 `wait_switch_cd()`。切人期间 intro 就绪并重新计算目标时，
+执行端按新决策的策略执行。
+
 使用建议：
 
 - 只是 Q/E 可用，不需要 FieldClaim；action 本身会参与评分。

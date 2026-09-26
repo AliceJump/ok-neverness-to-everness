@@ -1,9 +1,12 @@
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from src.char.BaseChar import BaseChar
 from src.char.Nanally import Nanally
+from src.combat.BaseCombatTask import BaseCombatTask
 from src.combat.planner import (
     NEVER_EXPIRES,
     ActionIntent,
@@ -20,6 +23,7 @@ from src.combat.planner import (
     Planner,
     Role,
     RoleProfile,
+    SwitchDecision,
     SwitchInGuard,
 )
 
@@ -429,17 +433,21 @@ class TestCombatPlanner(unittest.TestCase):
         )
         planner = self._planner([current, ordinary, claimed])
 
-        self.assertEqual(planner.decide_switch(current).target, ordinary)
+        ordinary_decision = planner.decide_switch(current)
+        self.assertEqual(ordinary_decision.target, ordinary)
+        self.assertFalse(ordinary_decision.skip_switch_waits)
         claim_active["value"] = True
         decision = planner.decide_switch(current)
         self.assertEqual(decision.target, claimed)
         self.assertTrue(decision.strict)
+        self.assertTrue(decision.skip_switch_waits)
 
         current._cycle_full = True
         planner.task.reaction_target = ordinary
         decision = planner.decide_switch(current)
         self.assertEqual(decision.target, claimed)
         self.assertTrue(decision.strict)
+        self.assertTrue(decision.skip_switch_waits)
 
     def test_strict_field_claim_preempts_switch_request(self):
         current = FakeChar(0, "current")
@@ -473,6 +481,7 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertEqual(decision.target, route_target)
         self.assertIn("strict route", decision.reason)
+        self.assertTrue(decision.skip_switch_waits)
 
     def test_strict_field_claim_uses_ordinary_entry_flow(self):
         calls = []
@@ -2866,6 +2875,77 @@ class TestCombatPlanner(unittest.TestCase):
                     offenders.append(f"{path}:{pattern}")
 
         self.assertEqual(offenders, [])
+
+
+class TestSwitchDecisionExecution(unittest.TestCase):
+    def test_ordinary_decision_waits_by_default(self):
+        decision = SwitchDecision(target=Mock(), reason="ordinary", priority=1)
+
+        self.assertFalse(decision.skip_switch_waits)
+
+    def test_switch_next_char_uses_decision_wait_policy(self):
+        current = Mock(index=0)
+        target = Mock(index=1)
+        for skip_switch_waits in (False, True):
+            with self.subTest(skip_switch_waits=skip_switch_waits):
+                task = Mock(team_size=2)
+                task.combat_session.switch_enabled = True
+                task.combat_planner.decide_switch.return_value = SwitchDecision(
+                    target=target,
+                    reason="selected target",
+                    priority=1,
+                    skip_switch_waits=skip_switch_waits,
+                )
+                task.combat_planner.has_strict_route.side_effect = AssertionError(
+                    "execution must use the decision policy"
+                )
+
+                BaseCombatTask.switch_next_char(task, current)
+
+                self.assertEqual(task._wait_switch_in_guard.called, not skip_switch_waits)
+                self.assertEqual(current.wait_switch_cd.called, not skip_switch_waits)
+                task._switch_to_char.assert_called_once()
+                current.wait_switch_cd.reset_mock()
+
+    def test_intro_replan_uses_new_decision_wait_policy(self):
+        current = Mock(index=0, ufn_name="current")
+        current.is_cycle_full.return_value = True
+        original = SimpleNamespace(index=1, ufn_name="original", has_intro=False)
+        target = SimpleNamespace(index=2, ufn_name="new", has_intro=False)
+        for skip_switch_waits in (False, True):
+            with self.subTest(skip_switch_waits=skip_switch_waits):
+                task = Mock(debug=False)
+                task.skip_sleep_checks.return_value = nullcontext(
+                    SimpleNamespace(check_combat=False)
+                )
+                task.is_in_team.return_value = True
+                task.scene.health_snapshot.return_value = object()
+                task._switch_detection_reason.side_effect = [
+                    (None, 0),
+                    ("char index fallback", 0),
+                ]
+                task._decide_switch_to.return_value = SwitchDecision(
+                    target=target,
+                    reason="intro target",
+                    priority=1,
+                    has_intro=True,
+                    skip_switch_waits=skip_switch_waits,
+                )
+                task.combat_planner.has_strict_route.side_effect = AssertionError(
+                    "execution must use the new decision policy"
+                )
+                task.record_element_reaction.return_value = False
+
+                BaseCombatTask._switch_to_char(
+                    task,
+                    original,
+                    current_char=current,
+                    retry_intro=True,
+                )
+
+                self.assertEqual(task._wait_switch_in_guard.called, not skip_switch_waits)
+                task._set_current_char.assert_called_once_with(current, target, True)
+                task.combat_planner.record_switch.assert_called_once_with(target)
 
 
 if __name__ == "__main__":

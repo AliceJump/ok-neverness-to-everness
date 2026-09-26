@@ -1124,6 +1124,7 @@ class CombatPlanner:
                     priority=999999,
                     has_intro=has_intro,
                     expected_entry=None,
+                    skip_switch_waits=True,
                 )
             if step.requires_entry_reaction:
                 if not has_intro:
@@ -1134,6 +1135,7 @@ class CombatPlanner:
                         priority=999998,
                         has_intro=has_intro,
                         expected_entry=None,
+                        skip_switch_waits=True,
                     )
                 return SwitchDecision(
                     target=target,
@@ -1141,6 +1143,7 @@ class CombatPlanner:
                     priority=999999,
                     has_intro=has_intro,
                     expected_entry=None,
+                    skip_switch_waits=True,
                 )
             action = self._strict_route_action(target, self._actions_for(target, context), context)
             expected = (
@@ -1154,6 +1157,7 @@ class CombatPlanner:
                 priority=999999,
                 has_intro=has_intro,
                 expected_entry=expected,
+                skip_switch_waits=True,
             )
 
         return SwitchDecision(
@@ -1162,6 +1166,7 @@ class CombatPlanner:
             priority=999998,
             has_intro=has_intro,
             expected_entry=None,
+            skip_switch_waits=True,
         )
 
     def _strict_route_target(self, context: CombatContext, step: FollowupStep) -> "BaseChar | None":
@@ -1259,6 +1264,7 @@ class CombatPlanner:
             expected_entry=None,
             score_breakdown=breakdown.format(),
             strict=True,
+            skip_switch_waits=True,
         )
 
     def _base_action_score(
