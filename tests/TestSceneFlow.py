@@ -60,17 +60,21 @@ class TestSceneFlow(unittest.TestCase):
         self.assertEqual(state["failures"][0].reason, "step retry limit reached")
 
     def test_action_results_are_ignored(self):
-        state = {"scene": Step.A}
-        flow = SceneFlow()
-        flow.step(
-            Step.A,
-            lambda: state["scene"] is Step.A,
-            lambda: state.update(scene=Step.B) or True,
-            next=(Step.B,),
-        )
-        flow.step(Step.B, lambda: state["scene"] is Step.B, lambda: None, next=(Step.B,))
+        for action_result in (True, False, None):
+            with self.subTest(action_result=action_result):
+                state = {"scene": Step.A}
 
-        self.assertTrue(flow.run(lambda: state["scene"] is Step.B, start=Step.A, poll_interval=0))
+                def handle_a():
+                    state["scene"] = Step.B
+                    return action_result
+
+                flow = SceneFlow()
+                flow.step(Step.A, lambda: state["scene"] is Step.A, handle_a, next=(Step.B,))
+                flow.step(Step.B, lambda: state["scene"] is Step.B, lambda: None, next=(Step.B,))
+
+                self.assertTrue(
+                    flow.run(lambda: state["scene"] is Step.B, start=Step.A, poll_interval=0)
+                )
 
     def test_transition_retries_without_global_recovery(self):
         state = {"scene": Step.A, "actions": 0, "transitions": 0, "recoveries": 0}

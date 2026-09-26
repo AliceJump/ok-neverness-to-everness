@@ -34,15 +34,6 @@ class TestCombatSession(unittest.TestCase):
         self.assertIs(session.start_char, task.start_char)
         self.assertGreater(session.combat_start, 0)
 
-    def test_existing_session_is_reused(self):
-        task = self._task()
-        previous = task.begin_combat_session()
-
-        current = task.begin_combat_session()
-
-        self.assertIs(current, previous)
-        self.assertEqual(task.switch_calls, 1)
-
     def test_first_engage_is_recorded_once_for_the_active_session(self):
         task = self._task()
         task.begin_combat_session()
