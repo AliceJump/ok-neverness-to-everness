@@ -408,7 +408,8 @@ class TestCombatPlanner(unittest.TestCase):
         planner = self._planner([current, claimed])
 
         decision = planner.decide_switch(current)
-        planner.expect_entry_action(decision.target, decision.expected_entry)
+        planner.prepare_switch(decision)
+        planner.complete_switch(decision, previous_char=current)
         result = planner.perform_current_char(claimed)
 
         self.assertEqual(decision.target, claimed)
@@ -504,7 +505,8 @@ class TestCombatPlanner(unittest.TestCase):
         planner = self._planner([current, claimed])
 
         decision = planner.decide_switch(current)
-        planner.expect_entry_action(decision.target, decision.expected_entry)
+        planner.prepare_switch(decision)
+        planner.complete_switch(decision, previous_char=current)
         result = planner.perform_current_char(claimed)
 
         self.assertEqual(decision.target, claimed)
@@ -1088,7 +1090,14 @@ class TestCombatPlanner(unittest.TestCase):
 
         char = FakeChar(0, "fadia", plan_items=lambda _: CombatPlan([ultimate, skill], entry=entry))
         planner = self._planner([char])
-        planner.expect_entry_action(char, ExpectedEntry(slot=ActionSlot.ULTIMATE))
+        decision = SwitchDecision(
+            target=char,
+            reason="test expected entry",
+            priority=1,
+            expected_entry=ExpectedEntry(slot=ActionSlot.ULTIMATE),
+        )
+        planner.prepare_switch(decision)
+        planner.complete_switch(decision)
 
         result = planner.perform_current_char(char)
 
@@ -1573,7 +1582,14 @@ class TestCombatPlanner(unittest.TestCase):
             max_field_time=1.0,
         )
         planner = self._planner([char])
-        planner.expect_entry_action(char, ExpectedEntry(action_name="jiuyuan_ultimate"))
+        decision = SwitchDecision(
+            target=char,
+            reason="test expected entry",
+            priority=1,
+            expected_entry=ExpectedEntry(action_name="jiuyuan_ultimate"),
+        )
+        planner.prepare_switch(decision)
+        planner.complete_switch(decision)
 
         result = planner.perform_current_char(char)
 
@@ -1823,6 +1839,70 @@ class TestCombatPlanner(unittest.TestCase):
 
         self.assertEqual(calls, ["zero_skill"])
         self.assertEqual(result.name, "zero_skill")
+
+    def test_route_switch_does_not_expect_unready_optional_action(self):
+        source = FakeChar(0, "source")
+        calls = []
+        target = FakeChar(
+            1,
+            "target",
+            plan_items=lambda _: [
+                self._action(
+                    "optional_ultimate",
+                    {ActionTag.ULTIMATE_ACTION},
+                    ActionSlot.ULTIMATE,
+                    calls,
+                    priority_ready=lambda _: False,
+                ),
+                self._action("required_skill", {ActionTag.SKILL_ACTION}, ActionSlot.SKILL, calls),
+            ],
+        )
+        planner = self._planner([source, target])
+        self._publish(
+            planner,
+            source,
+            lambda context: context.request_route(
+                [
+                    FollowupStep.for_action(target, ActionSlot.ULTIMATE, optional=True),
+                    FollowupStep.for_action(target, ActionSlot.SKILL),
+                ]
+            ),
+        )
+
+        decision = planner.decide_switch(source)
+        self.assertEqual(decision.target, target)
+        self.assertIsNone(decision.expected_entry)
+        planner.prepare_switch(decision)
+        planner.complete_switch(decision, previous_char=source)
+        planner.perform_current_char(target)
+        self.assertEqual(calls, ["required_skill"])
+
+    def test_cleared_expected_entry_does_not_override_entry_order(self):
+        calls = []
+        char = FakeChar(
+            0,
+            "char",
+            plan_items=[
+                self._action("skill", {ActionTag.SKILL_ACTION}, ActionSlot.SKILL, calls),
+                self._action("ultimate", {ActionTag.ULTIMATE_ACTION}, ActionSlot.ULTIMATE, calls),
+            ],
+        )
+        planner = self._planner([char])
+        expected_decision = SwitchDecision(
+            target=char,
+            reason="expected entry",
+            priority=1,
+            expected_entry=ExpectedEntry(slot=ActionSlot.ULTIMATE),
+        )
+        planner.prepare_switch(expected_decision)
+        planner.complete_switch(expected_decision)
+        planner.prepare_switch(
+            SwitchDecision(target=char, reason="clear expected entry", priority=1)
+        )
+
+        planner.perform_current_char(char)
+
+        self.assertEqual(calls, ["skill", "ultimate"])
 
     def test_request_route_skips_failed_optional_prepare_step(self):
         calls = []
@@ -2911,6 +2991,11 @@ class TestSwitchDecisionExecution(unittest.TestCase):
         current = Mock(index=0, ufn_name="current")
         current.is_cycle_full.return_value = True
         original = SimpleNamespace(index=1, ufn_name="original", has_intro=False)
+        original_decision = SwitchDecision(
+            target=original,
+            reason="original target",
+            priority=1,
+        )
         target = SimpleNamespace(index=2, ufn_name="new", has_intro=False)
         for skip_switch_waits in (False, True):
             with self.subTest(skip_switch_waits=skip_switch_waits):
@@ -2924,13 +3009,14 @@ class TestSwitchDecisionExecution(unittest.TestCase):
                     (None, 0),
                     ("char index fallback", 0),
                 ]
-                task._decide_switch_to.return_value = SwitchDecision(
+                new_decision = SwitchDecision(
                     target=target,
                     reason="intro target",
                     priority=1,
                     has_intro=True,
                     skip_switch_waits=skip_switch_waits,
                 )
+                task._decide_switch_to.return_value = new_decision
                 task.combat_planner.has_strict_route.side_effect = AssertionError(
                     "execution must use the new decision policy"
                 )
@@ -2938,14 +3024,104 @@ class TestSwitchDecisionExecution(unittest.TestCase):
 
                 BaseCombatTask._switch_to_char(
                     task,
-                    original,
+                    original_decision,
                     current_char=current,
                     retry_intro=True,
                 )
 
                 self.assertEqual(task._wait_switch_in_guard.called, not skip_switch_waits)
                 task._set_current_char.assert_called_once_with(current, target, True)
-                task.combat_planner.record_switch.assert_called_once_with(target)
+                task.combat_planner.prepare_switch.assert_has_calls(
+                    [unittest.mock.call(original_decision), unittest.mock.call(new_decision)]
+                )
+                task.combat_planner.complete_switch.assert_called_once_with(
+                    new_decision,
+                    previous_char=current,
+                    entry_reaction=False,
+                )
+
+    def test_intro_replan_registers_only_final_target_expectation(self):
+        current = Mock(index=0, ufn_name="current")
+        current.is_cycle_full.return_value = True
+        original = SimpleNamespace(index=1, ufn_name="original", has_intro=False)
+        original_decision = SwitchDecision(
+            target=original,
+            reason="original target",
+            priority=1,
+            expected_entry=ExpectedEntry(action_name="original_action"),
+        )
+        target = SimpleNamespace(index=2, ufn_name="new", has_intro=False)
+        new_expected = ExpectedEntry(action_name="new_action")
+        task = Mock(debug=False)
+        task.skip_sleep_checks.return_value = nullcontext(SimpleNamespace(check_combat=False))
+        task.is_in_team.return_value = True
+        task.scene.health_snapshot.return_value = object()
+        task._switch_detection_reason.side_effect = [(None, 0), ("char index fallback", 0)]
+        new_decision = SwitchDecision(
+            target=target,
+            reason="intro target",
+            priority=1,
+            has_intro=True,
+            expected_entry=new_expected,
+            skip_switch_waits=True,
+        )
+        task._decide_switch_to.return_value = new_decision
+        task.record_element_reaction.return_value = False
+
+        BaseCombatTask._switch_to_char(
+            task,
+            original_decision,
+            current_char=current,
+            retry_intro=True,
+        )
+
+        task.combat_planner.prepare_switch.assert_has_calls(
+            [unittest.mock.call(original_decision), unittest.mock.call(new_decision)]
+        )
+        task.combat_planner.complete_switch.assert_called_once_with(
+            new_decision,
+            previous_char=current,
+            entry_reaction=False,
+        )
+
+    def test_successful_switch_completes_with_selected_decision(self):
+        target = Mock(index=1, ufn_name="target")
+        decision = SwitchDecision(
+            target=target,
+            reason="selected target",
+            priority=1,
+            expected_entry=ExpectedEntry(slot=ActionSlot.SKILL),
+        )
+        task = Mock(debug=False)
+        task.skip_sleep_checks.return_value = nullcontext(SimpleNamespace(check_combat=False))
+        task.is_in_team.return_value = True
+        task.scene.health_snapshot.return_value = object()
+        task._switch_detection_reason.return_value = ("char index fallback", 0)
+
+        BaseCombatTask._switch_to_char(task, decision)
+
+        task.combat_planner.prepare_switch.assert_called_once_with(decision)
+        task.combat_planner.complete_switch.assert_called_once_with(
+            decision,
+            previous_char=None,
+            entry_reaction=False,
+        )
+
+    def test_failed_switch_clears_target_expectation(self):
+        current = Mock(index=0, ufn_name="current")
+        target = Mock(index=1, ufn_name="target")
+        decision = SwitchDecision(target=target, reason="selected target", priority=1)
+        task = Mock(debug=False)
+        task.skip_sleep_checks.return_value = nullcontext(SimpleNamespace(check_combat=False))
+        task.is_in_team.return_value = True
+        task.scene.health_snapshot.return_value = object()
+        task._switch_detection_reason.return_value = (None, 0)
+
+        BaseCombatTask._switch_to_char(task, decision, current_char=current, time_out=0)
+
+        task.combat_planner.prepare_switch.assert_called_once_with(decision)
+        task.combat_planner.complete_switch.assert_not_called()
+        task.combat_planner.record_switch.assert_not_called()
 
 
 if __name__ == "__main__":

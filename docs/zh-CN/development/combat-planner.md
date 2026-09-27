@@ -312,6 +312,12 @@ strict route 和 strict field claim 会设置此字段；普通决策默认等�
 `SwitchInGuard` 和 `wait_switch_cd()`。切人期间 intro 就绪并重新计算目标时，
 执行端按新决策的策略执行。
 
+执行端开始尝试切人时调用 `prepare_switch(decision)`, planner 会清除目标残留的
+入场动作期望。确认切人成功后, 执行端将最终决策交给
+`complete_switch(decision, previous_char, entry_reaction=...)`; planner 会登记该决策的
+`expected_entry`, 清理离场角色尚未消费的期望, 并记录切人及入场反应。切人失败不会
+登记新期望。intro 期间重新选人时, 执行端准备新决策, 成功后只提交最终决策。
+
 使用建议：
 
 - 只是 Q/E 可用，不需要 FieldClaim；action 本身会参与评分。
@@ -365,6 +371,10 @@ context.request_route([
     FollowupStep.for_action(b, ActionSlot.ULTIMATE),
 ])
 ```
+
+可选动作步骤的 `priority_ready=False` 表示目标到场后跳过该动作。切人决策此时
+不设置该动作的 `expected_entry`, 因此入场调度不会在 route 跳过步骤前执行它。
+必需动作步骤在等待动作时仍保留 slot 期望。
 
 这里 A 按自己的正常 entry flow 执行完本轮后, 才推进到 B 的终结技。
 A 已在场时也会执行本轮, 不直接跳过。它不指定首动, 不要求入场反应,

@@ -276,6 +276,8 @@ The planner reads candidate claims again at each switch decision. A locked stric
 
 `SwitchDecision.skip_switch_waits` carries this execution policy from the planner to the switch executor. The planner sets it for locked strict routes and strict field claims; ordinary decisions default to waiting for `SwitchInGuard` and `wait_switch_cd()`. If the target is recalculated when an intro becomes ready during a switch, the executor uses the new decision's policy.
 
+The executor calls `prepare_switch(decision)` before attempting a switch; the planner clears any stale entry expectation for that target. Once the switch succeeds, the executor passes the final decision to `complete_switch(decision, previous_char, entry_reaction=...)`. The planner records its `expected_entry`, clears any unconsumed expectation on the character leaving the field, and records the switch and entry reaction. A failed switch does not register a new expectation. If an intro replan selects another target, the executor prepares the new decision and completes only that final decision.
+
 Usage guidance:
 
 - If only Q/E is available, no `FieldClaim` is needed; the action itself participates in scoring.
@@ -328,6 +330,8 @@ context.request_route([
     FollowupStep.for_action(b, ActionSlot.ULTIMATE),
 ])
 ```
+
+For an optional action step, `priority_ready=False` means the action is skipped after the target arrives. The switch decision does not set an expected entry for that unready action, so the entry dispatcher cannot run it before the route skips the step. Required action steps retain their slot expectation while waiting for the action.
 
 A finishes its normal entry flow before the route advances to B's ultimate.
 If A is already on field, it still runs its turn. No first action or entry reaction is
