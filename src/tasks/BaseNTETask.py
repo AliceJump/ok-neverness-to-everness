@@ -49,7 +49,7 @@ MOUSE_CONTROL_WARNING = (
 )
 
 
-class BaseNTETask(
+class BaseNTETask( # pyright: ignore[reportIncompatibleMethodOverride]
     SceneFlowMixin,
     CharUIMixin,
     MovementMixin,
