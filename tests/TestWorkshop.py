@@ -35,7 +35,11 @@ from src.char.workshop.service import (
     WorkshopInstallErrorCode,
     WorkshopPackageService,
 )
-from src.ui.features.characters.workshop_dialog import PackageImportDialog, WorkshopDialog
+from src.ui.features.characters.workshop_dialog import (
+    PackageImportDialog,
+    PackageMetadataDialog,
+    WorkshopDialog,
+)
 
 SOURCE = (
     "from src.char.BaseChar import BaseChar, Element\n\n"
@@ -409,8 +413,17 @@ class TestWorkshop(unittest.TestCase):
     def test_version_format_and_numeric_order(self):
         self.assertGreater(parse_version("1.10.0"), parse_version("1.9.9"))
         for version in (
-            "1", "1.0", "v1.0.0", "1.0.0-beta", "01.0.0", "1.00.0", "-1.0.0",
-            "\uff11.0.0", "1.0.0.0", "1.0.0\n", "1" * 33 + ".0.0",
+            "1",
+            "1.0",
+            "v1.0.0",
+            "1.0.0-beta",
+            "01.0.0",
+            "1.00.0",
+            "-1.0.0",
+            "\uff11.0.0",
+            "1.0.0.0",
+            "1.0.0\n",
+            "1" * 33 + ".0.0",
         ):
             with self.subTest(version=version), self.assertRaises(WorkshopFormatError):
                 parse_version(version)
@@ -514,6 +527,101 @@ class TestWorkshop(unittest.TestCase):
             dialog.deleteLater()
             parent.deleteLater()
 
+    def test_export_fills_selected_workshop_version_without_installing_or_remembering(self):
+        defaults = TeamPackage("Local team", "", "", "1.0.0", self._package(False).slots)
+        old = CatalogEntry(
+            replace(self._package(), description="旧版说明\nOld rotation"),
+            "codes/old.zip",
+            "old.zip",
+            100,
+            "2026-09-01T00:00:00Z",
+        )
+        latest = replace(old, package=replace(old.package, version="1.1.0", description="New"))
+        repository = Mock()
+        parent = QWidget()
+        dialog = PackageMetadataDialog(defaults, parent, repository=repository)
+        imported = []
+
+        def select_history(picker):
+            self.assertTrue(picker.metadata_only)
+            self.assertFalse(picker.yesButton.isEnabled())
+            picker.import_requested.connect(lambda *args: imported.append(args))
+            picker._catalog_loaded(([latest, old], IndexSource("GitHub", "index", "base")))
+            picker.version_combo.setCurrentIndex(1)
+            self.assertTrue(picker.yesButton.isEnabled())
+            self.assertTrue(picker.validate())
+            picker.import_button.click()
+            return 1
+
+        try:
+            with (
+                patch.object(WorkshopDialog, "reload_catalog"),
+                patch.object(WorkshopDialog, "exec", new=select_history),
+            ):
+                dialog.fill_button.click()
+            self.assertEqual(dialog.package(), replace(old.package, slots=()))
+            self.assertTrue(dialog.yesButton.isEnabled())
+            self.assertEqual(dialog.description_edit.toPlainText(), old.package.description)
+            dialog.version_edit.setText("1.0.1")
+            self.assertEqual(dialog.package().version, "1.0.1")
+            self.assertEqual(imported, [])
+            repository.download_archive.assert_not_called()
+            self.assertEqual(self.manager.get_team_presets(), [])
+            reopened = PackageMetadataDialog(defaults, parent, repository=repository)
+            self.assertEqual(reopened.package(), replace(defaults, slots=()))
+            reopened.deleteLater()
+        finally:
+            dialog.deleteLater()
+            parent.deleteLater()
+
+    def test_cancel_workshop_fill_preserves_edited_export_fields(self):
+        defaults = TeamPackage("Draft", "Draft description", "Me", "2.0.0", ())
+        parent = QWidget()
+        dialog = PackageMetadataDialog(defaults, parent, repository=Mock())
+        dialog.name_edit.setText("Edited draft")
+        before = dialog.package()
+
+        def cancel_selection(picker):
+            entry = CatalogEntry(
+                self._package(), "codes/test.zip", "test.zip", 100, "2026-01-01T00:00:00Z"
+            )
+            picker._catalog_loaded(([entry], IndexSource("GitHub", "index", "base")))
+            return 0
+
+        try:
+            with (
+                patch.object(WorkshopDialog, "reload_catalog"),
+                patch.object(WorkshopDialog, "exec", new=cancel_selection),
+            ):
+                dialog.fill_button.click()
+            self.assertEqual(dialog.package(), before)
+        finally:
+            dialog.deleteLater()
+            parent.deleteLater()
+
+    def test_workshop_fill_requires_selection_after_filter_or_load_failure(self):
+        entry = CatalogEntry(
+            self._package(), "codes/test.zip", "test.zip", 100, "2026-01-01T00:00:00Z"
+        )
+        parent = QWidget()
+        with patch.object(WorkshopDialog, "reload_catalog"):
+            dialog = WorkshopDialog(Mock(), parent, metadata_only=True)
+        try:
+            dialog._catalog_failed(RuntimeError("offline"))
+            self.assertFalse(dialog.yesButton.isEnabled())
+            self.assertFalse(dialog.validate())
+            dialog._catalog_loaded(([entry], IndexSource("GitHub", "index", "base")))
+            self.assertTrue(dialog.yesButton.isEnabled())
+            dialog.search_edit.setText("no matches")
+            self.assertFalse(dialog.yesButton.isEnabled())
+            self.assertFalse(dialog.validate())
+            self.assertIsNone(dialog.selected_package())
+            dialog.search_edit.clear()
+            self.assertEqual(dialog.selected_package(), entry.package)
+        finally:
+            dialog.deleteLater()
+            parent.deleteLater()
+
     def test_workshop_dialog_layout_stability_and_no_shadow(self):
         pkg1 = TeamPackage("A", "Desc 1", "Author A", "1.0.0", self._package(False).slots)
         pkg2 = TeamPackage(
@@ -544,4 +652,3 @@ class TestWorkshop(unittest.TestCase):
         finally:
             dialog.deleteLater()
             parent.deleteLater()
-
