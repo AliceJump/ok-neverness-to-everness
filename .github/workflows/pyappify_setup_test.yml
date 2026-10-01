@@ -1,0 +1,72 @@
+name: Test PyAppify Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: Version string used by inline_ok_requirements for the test build.
+        required: true
+        default: v0.0.0-pyappify-test
+
+permissions:
+  contents: read
+
+jobs:
+  build-setup:
+    name: Build setup executables
+    runs-on: windows-latest
+
+    env:
+      PYTHON_VERSION: '3.12'
+      PYTHONFAULTHANDLER: '1'
+      PYTHONIOENCODING: 'UTF-8'
+      PYTHONLEGACYWINDOWSSTDIO: 'UTF-8'
+
+    steps:
+      - name: Configure runner
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git config --global user.email "110257560+BnanZ0@users.noreply.github.com"
+          git config --global user.name "RU"
+
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+          lfs: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Prepare release requirements
+        env:
+          RELEASE_TAG: ${{ inputs.version_tag }}
+        run: python -m ok.update.inline_ok_requirements --tag "$env:RELEASE_TAG"
+
+      - name: Build setup with BnanZ0 PyAppify Action
+        uses: BnanZ0/pyappify-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload setup executables
+        uses: actions/upload-artifact@v7
+        with:
+          name: pyappify-setup-${{ github.run_number }}
+          path: pyappify_dist/*setup.exe
+          if-no-files-found: error
+          retention-days: 7
